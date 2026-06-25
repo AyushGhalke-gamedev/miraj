@@ -7,6 +7,7 @@ A Discord bot that watches server messages for spam and can automatically timeou
 - Sends wholesome welcome messages when new members join.
 - Generates custom welcome banner images with the new member's profile picture.
 - Includes a password-protected web dashboard for server settings.
+- Lets admins customize the bot's per-server profile from the dashboard.
 - Detects flood spam, repeated messages, invite links, scam links, bad words, mention spam, emoji spam, zalgo text, ghost pings, and excessive caps.
 - Uses an AutoMod warning ladder: first warning, second warning, third active warning mutes for 6 hours by default.
 - Automatically resets active AutoMod strikes after 24 hours by default.
@@ -125,12 +126,15 @@ Welcome placeholders:
 The dashboard lets admins configure:
 
 - Welcome channel, message, banner text, banner colors, and banner background URL.
+- Bot server profile: server name/nickname, server bio, server avatar, and server banner.
 - Flood limits, spam window, duplicate limit, mention limit, caps threshold, emoji threshold, zalgo threshold, ghost-ping window, AutoMod strike reset, strike mute duration, and strike threshold.
 - Invite blocking, scam-domain blocking, bad-word blocking, and custom word/domain lists.
 - Log channel, ignored channels, ignored roles, and user DM notices for moderation actions.
 - Per-command on/off toggles for all admin slash commands.
 
 Moderation DMs are best-effort. If a user has DMs closed or blocks the bot, the moderation action still completes.
+
+The Bot Profile tab uses Discord's per-server bot profile fields. It does not change the bot's global username/profile for every server.
 
 Set `DASHBOARD_PASSWORD` before exposing the dashboard beyond your own machine. By default it binds to `127.0.0.1`.
 

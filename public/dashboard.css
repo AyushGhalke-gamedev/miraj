@@ -337,6 +337,40 @@ textarea:focus {
   display: block;
 }
 
+.banner-preview.compact {
+  aspect-ratio: 5 / 2;
+}
+
+.profile-preview {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  padding: 14px;
+}
+
+.profile-avatar {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #ffffff;
+}
+
+.profile-preview h3,
+.profile-preview p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.profile-preview p {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
 .color-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

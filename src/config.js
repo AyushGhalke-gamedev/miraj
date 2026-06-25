@@ -63,6 +63,8 @@ export const DEFAULT_CONFIG = Object.freeze({
   ],
   commandToggles: DEFAULT_COMMAND_TOGGLES,
   dmModerationEnabled: true,
+  botProfileNick: null,
+  botProfileBio: null,
   logChannelId: null,
   welcomeEnabled: false,
   welcomeChannelId: null,
@@ -153,6 +155,8 @@ export function normalizeGuildConfig(config = {}) {
       merged.dmModerationEnabled,
       DEFAULT_CONFIG.dmModerationEnabled
     ),
+    botProfileNick: readOptionalText(merged.botProfileNick, 32),
+    botProfileBio: readOptionalText(merged.botProfileBio, 190),
     logChannelId: readNullableId(merged.logChannelId),
     welcomeEnabled: readBoolean(merged.welcomeEnabled, DEFAULT_CONFIG.welcomeEnabled),
     welcomeChannelId: readNullableId(merged.welcomeChannelId),
@@ -236,6 +240,19 @@ function readText(value, fallback, maxLength) {
 
   const trimmed = value.trim();
   return trimmed ? trimmed.slice(0, maxLength) : fallback;
+}
+
+function readOptionalText(value, maxLength) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, maxLength) : null;
 }
 
 function readWordList(value, fallback = []) {

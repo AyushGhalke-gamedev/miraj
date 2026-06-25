@@ -1,11 +1,19 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import express from "express";
+import multer from "multer";
 import { ChannelType } from "discord.js";
 import { COMMAND_TOGGLE_KEYS, NUMERIC_LIMITS } from "./config.js";
 import { createWelcomeBanner } from "./welcome.js";
 
 let server = null;
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 8 * 1024 * 1024,
+    files: 2
+  }
+});
 
 export function startDashboard(client, store) {
   if (server) {
@@ -106,6 +114,7 @@ export function startDashboard(client, store) {
       getRoles(guild)
     ]);
     const config = store.get(guild.id);
+    const botMember = guild.members.me ?? await guild.members.fetchMe();
 
     response.send(renderLayout({
       title: `${guild.name} Dashboard`,
@@ -114,6 +123,7 @@ export function startDashboard(client, store) {
       content: renderGuildSettings({
         guild,
         config,
+        botMember,
         channels,
         roles,
         saved: request.query.saved === "1"
@@ -121,7 +131,13 @@ export function startDashboard(client, store) {
     }));
   });
 
-  app.post("/guild/:guildId/settings", async (request, response) => {
+  app.post(
+    "/guild/:guildId/settings",
+    upload.fields([
+      { name: "bot_avatar_file", maxCount: 1 },
+      { name: "bot_banner_file", maxCount: 1 }
+    ]),
+    async (request, response) => {
     const guild = client.guilds.cache.get(request.params.guildId);
 
     if (!guild) {
@@ -129,10 +145,22 @@ export function startDashboard(client, store) {
       return;
     }
 
-    const patch = readSettingsPatch(request.body);
-    await store.update(guild.id, patch);
-    response.redirect(`/guild/${guild.id}?saved=1`);
-  });
+    try {
+      const currentConfig = store.get(guild.id);
+      const profilePatch = await applyBotProfileUpdate(
+        guild,
+        currentConfig,
+        request.body,
+        request.files
+      );
+      const patch = { ...readSettingsPatch(request.body), ...profilePatch };
+      await store.update(guild.id, patch);
+      response.redirect(`/guild/${guild.id}?saved=1`);
+    } catch (error) {
+      response.status(400).send(`Could not update settings: ${escapeHtml(error.message)}`);
+    }
+  }
+  );
 
   app.get("/guild/:guildId/welcome-preview.png", async (request, response) => {
     const guild = client.guilds.cache.get(request.params.guildId);
@@ -238,7 +266,10 @@ function renderEmptyState() {
   </section>`;
 }
 
-function renderGuildSettings({ guild, config, channels, roles, saved }) {
+function renderGuildSettings({ guild, config, botMember, channels, roles, saved }) {
+  const botAvatarUrl = botMember.displayAvatarURL({ extension: "png", size: 128 });
+  const botBannerUrl = botMember.displayBannerURL?.({ extension: "png", size: 512 }) ?? null;
+
   return `<section class="page-header">
     <div>
       <p class="eyebrow">Server dashboard</p>
@@ -247,9 +278,10 @@ function renderGuildSettings({ guild, config, channels, roles, saved }) {
     ${saved ? "<p class=\"save-pill\">Saved</p>" : ""}
   </section>
 
-  <form class="settings-form" method="post" action="/guild/${guild.id}/settings">
+  <form class="settings-form" method="post" action="/guild/${guild.id}/settings" enctype="multipart/form-data">
     <div class="tab-bar" role="tablist" aria-label="Settings sections">
       <button class="tab-button active" type="button" data-tab="welcome">Welcome</button>
+      <button class="tab-button" type="button" data-tab="profile">Bot Profile</button>
       <button class="tab-button" type="button" data-tab="automod">Automod</button>
       <button class="tab-button" type="button" data-tab="moderation">Moderation</button>
       <button class="tab-button" type="button" data-tab="commands">Commands</button>
@@ -290,6 +322,55 @@ function renderGuildSettings({ guild, config, channels, roles, saved }) {
             ${renderColor("welcome_banner_accent_color", "Accent", config.welcomeBannerAccentColor)}
             ${renderColor("welcome_banner_text_color", "Text", config.welcomeBannerTextColor)}
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" data-tab-panel="profile">
+      <div class="panel-heading">
+        <div>
+          <h2>Bot Profile</h2>
+          <p>Customize this bot's server profile. These settings apply only in ${escapeHtml(guild.name)}.</p>
+        </div>
+      </div>
+      <div class="two-column">
+        <div class="field-stack">
+          <label>
+            <span>Server name</span>
+            <input name="bot_profile_nick" maxlength="32" placeholder="${escapeHtml(botMember.user.username)}" value="${escapeHtml(config.botProfileNick ?? botMember.nickname ?? "")}">
+          </label>
+          <label>
+            <span>Server bio</span>
+            <textarea name="bot_profile_bio" rows="5" maxlength="190">${escapeHtml(config.botProfileBio ?? "")}</textarea>
+          </label>
+          <label>
+            <span>Avatar image URL</span>
+            <input name="bot_avatar_url" type="url" placeholder="https://example.com/avatar.png">
+          </label>
+          <label>
+            <span>Upload avatar image</span>
+            <input name="bot_avatar_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+          </label>
+          ${renderToggle("clear_bot_avatar", false, "Clear server avatar")}
+        </div>
+        <div class="field-stack">
+          <div class="profile-preview">
+            <img class="profile-avatar" src="${escapeHtml(botAvatarUrl)}" alt="Current bot avatar">
+            <div>
+              <h3>${escapeHtml(botMember.displayName)}</h3>
+              <p>${escapeHtml(config.botProfileBio ?? "No server bio set yet.")}</p>
+            </div>
+          </div>
+          ${botBannerUrl ? `<div class="banner-preview compact"><img src="${escapeHtml(botBannerUrl)}" alt="Current bot banner"></div>` : ""}
+          <label>
+            <span>Banner image URL</span>
+            <input name="bot_banner_url" type="url" placeholder="https://example.com/banner.png">
+          </label>
+          <label>
+            <span>Upload banner image</span>
+            <input name="bot_banner_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+          </label>
+          ${renderToggle("clear_bot_banner", false, "Clear server banner")}
         </div>
       </div>
     </section>
@@ -428,6 +509,53 @@ function renderOption(value, label, selected) {
   return `<option value="${escapeHtml(value)}" ${isSelected ? "selected" : ""}>${escapeHtml(label)}</option>`;
 }
 
+async function applyBotProfileUpdate(guild, currentConfig, body, files = {}) {
+  const botMember = guild.members.me ?? await guild.members.fetchMe();
+  const desiredNick = readOptionalProfileText(body.bot_profile_nick, 32);
+  const desiredBio = readOptionalProfileText(body.bot_profile_bio, 190);
+  const options = {};
+  const patch = {};
+
+  if (desiredNick !== (botMember.nickname ?? null)) {
+    options.nick = desiredNick;
+    patch.botProfileNick = desiredNick;
+  }
+
+  if (desiredBio !== currentConfig.botProfileBio) {
+    options.bio = desiredBio;
+    patch.botProfileBio = desiredBio;
+  }
+
+  if (body.clear_bot_avatar === "on") {
+    options.avatar = null;
+  } else {
+    const avatar = await readProfileImage(files.bot_avatar_file?.[0], body.bot_avatar_url);
+
+    if (avatar) {
+      options.avatar = avatar;
+    }
+  }
+
+  if (body.clear_bot_banner === "on") {
+    options.banner = null;
+  } else {
+    const banner = await readProfileImage(files.bot_banner_file?.[0], body.bot_banner_url);
+
+    if (banner) {
+      options.banner = banner;
+    }
+  }
+
+  if (Object.keys(options).length > 0) {
+    await guild.members.editMe({
+      ...options,
+      reason: "Updated from bot dashboard"
+    });
+  }
+
+  return patch;
+}
+
 function readSettingsPatch(body) {
   const commandToggles = Object.fromEntries(
     COMMAND_TOGGLE_KEYS.map((command) => [command, body[`command_${command}`] === "on"])
@@ -561,6 +689,57 @@ function toArray(value) {
   }
 
   return value ? [String(value)] : [];
+}
+
+function readOptionalProfileText(value, maxLength) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, maxLength) : null;
+}
+
+async function readProfileImage(file, urlValue) {
+  if (file?.buffer?.length) {
+    return file.buffer;
+  }
+
+  if (!urlValue || !String(urlValue).trim()) {
+    return null;
+  }
+
+  let url;
+
+  try {
+    url = new URL(String(urlValue).trim());
+  } catch {
+    throw new Error("Profile image URL is not valid.");
+  }
+
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("Profile image URL must start with http:// or https://.");
+  }
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Could not download profile image: HTTP ${response.status}.`);
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+
+  if (!contentType.startsWith("image/")) {
+    throw new Error("Profile image URL did not return an image.");
+  }
+
+  const bytes = Buffer.from(await response.arrayBuffer());
+
+  if (bytes.length > 8 * 1024 * 1024) {
+    throw new Error("Profile image must be 8 MB or smaller.");
+  }
+
+  return bytes;
 }
 
 function readPort(value, fallback) {

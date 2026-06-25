@@ -20,9 +20,13 @@ test("normalizes command toggles and defaults unknown commands to enabled", () =
 test("normalizes chat protection lists", () => {
   const config = normalizeGuildConfig({
     badWords: "Alpha\nbeta, beta",
-    scamDomains: "Bad.Example\nwww.fake.test"
+    scamDomains: "Bad.Example\nwww.fake.test",
+    botProfileNick: "  Custom Guard  ",
+    botProfileBio: "  Watching this server kindly.  "
   });
 
   assert.deepEqual(config.badWords, ["alpha", "beta"]);
   assert.deepEqual(config.scamDomains, ["bad.example", "www.fake.test"]);
+  assert.equal(config.botProfileNick, "Custom Guard");
+  assert.equal(config.botProfileBio, "Watching this server kindly.");
 });
