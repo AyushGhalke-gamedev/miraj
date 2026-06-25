@@ -11,7 +11,7 @@ import { startDashboard } from "./dashboard.js";
 import { InviteTracker } from "./inviteTracker.js";
 import { configStore } from "./store.js";
 import { SpamTracker } from "./spamDetector.js";
-import { sendWelcome } from "./welcome.js";
+import { buildWelcomePayload, sendWelcome } from "./welcome.js";
 import {
   canBanUser,
   canKickMember,
@@ -91,7 +91,14 @@ client.on(Events.MessageDelete, async (message) => {
 
 client.on(Events.GuildMemberAdd, async (member) => {
   try {
-    await sendWelcome(member, configStore, inviteTracker);
+    const sent = await sendWelcome(member, configStore, inviteTracker);
+
+    if (!sent) {
+      const config = configStore.get(member.guild.id);
+      console.warn(
+        `Welcome skipped for ${member.user.tag} in ${member.guild.name}. Enabled: ${config.welcomeEnabled}; channel: ${config.welcomeChannelId ?? "not set"}`
+      );
+    }
   } catch (error) {
     console.error("Failed to send welcome message:", error);
   }
@@ -141,6 +148,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await handleLockdownCommand(interaction, false);
     } else if (interaction.commandName === "nickreset") {
       await handleNickresetCommand(interaction);
+    } else if (interaction.commandName === "welcometest") {
+      await handleWelcomeTestCommand(interaction);
     }
   } catch (error) {
     console.error("Failed to handle command:", error);
@@ -699,6 +708,52 @@ async function handleNickresetCommand(interaction) {
   });
   await replySafely(interaction, {
     content: `Reset ${user.tag}'s server nickname.`
+  });
+}
+
+async function handleWelcomeTestCommand(interaction) {
+  const config = configStore.get(interaction.guild.id);
+  const overrideChannel = interaction.options.getChannel("channel");
+  const user = interaction.options.getUser("user") ?? interaction.user;
+
+  if (!overrideChannel && !config.welcomeEnabled) {
+    await replySafely(interaction, {
+      content: "Welcome messages are disabled. Enable Welcome in the dashboard, or pass a channel to `/welcometest` for a one-off preview."
+    });
+    return;
+  }
+
+  const channel = overrideChannel
+    ?? await interaction.guild.channels.fetch(config.welcomeChannelId).catch(() => null);
+
+  if (!channel?.isTextBased?.()) {
+    await replySafely(interaction, {
+      content: "No valid welcome channel is configured. Set one in the dashboard or pass a channel to `/welcometest`."
+    });
+    return;
+  }
+
+  const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+
+  if (!member) {
+    await replySafely(interaction, {
+      content: "That user is not a member of this server."
+    });
+    return;
+  }
+
+  const payload = await buildWelcomePayload(member, config, {
+    code: "test",
+    inviterId: interaction.user.id,
+    inviterTag: interaction.user.tag,
+    inviterUsername: interaction.user.username,
+    inviterMention: `<@${interaction.user.id}>`,
+    inviterInvites: 1
+  });
+
+  await channel.send(payload);
+  await replySafely(interaction, {
+    content: `Sent a test welcome for ${user.tag} in <#${channel.id}>.`
   });
 }
 

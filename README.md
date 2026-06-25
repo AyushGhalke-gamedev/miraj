@@ -36,6 +36,7 @@ A Discord bot that watches server messages for spam and can automatically timeou
   - `/lockdown`
   - `/unlockdown`
   - `/nickreset`
+  - `/welcometest`
 
 This is not a full Carl-bot clone. Carl-bot is a large hosted platform with reaction roles, custom commands, suggestions, starboard, autoroles, feeds, reminders, and more. This project covers a strong moderation and welcome core: automod, moderation logs, warning history, timed mutes, bans, kicks, softbans, purge/clear, slowmode, channel lockdown, nickname reset, welcome banners, and a web dashboard.
 
@@ -159,3 +160,5 @@ After changing commands, rerun:
 ```bash
 npm run deploy
 ```
+
+Use `/welcometest` after enabling welcome messages to send a preview immediately. If welcome is disabled or no channel is set, the command tells you what is missing.

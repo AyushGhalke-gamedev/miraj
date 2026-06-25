@@ -17,6 +17,7 @@ export const COMMAND_TOGGLE_KEYS = Object.freeze([
   "unlockdown",
   "unmute",
   "warn",
+  "welcometest",
   "warnings"
 ]);
 

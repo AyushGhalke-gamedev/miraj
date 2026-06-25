@@ -442,6 +442,22 @@ const nickresetCommand = new SlashCommandBuilder()
       .setMaxLength(300)
   );
 
+const welcomeTestCommand = new SlashCommandBuilder()
+  .setName("welcometest")
+  .setDescription("Send a test welcome message and banner.")
+  .setDefaultMemberPermissions(ADMIN_ONLY)
+  .addChannelOption((option) =>
+    option
+      .setName("channel")
+      .setDescription("Channel to send the test welcome in. Defaults to configured welcome channel.")
+      .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+  )
+  .addUserOption((option) =>
+    option
+      .setName("user")
+      .setDescription("Member to use in the preview. Defaults to you.")
+  );
+
 export const commandBuilders = [
   antispamCommand,
   muteCommand,
@@ -459,6 +475,7 @@ export const commandBuilders = [
   slowmodeCommand,
   lockdownCommand,
   unlockdownCommand,
-  nickresetCommand
+  nickresetCommand,
+  welcomeTestCommand
 ];
 export const commands = commandBuilders.map((command) => command.toJSON());
