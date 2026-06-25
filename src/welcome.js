@@ -4,7 +4,7 @@ const BANNER_WIDTH = 1000;
 const BANNER_HEIGHT = 360;
 const BANNER_FILENAME = "welcome-banner.png";
 
-export async function sendWelcome(member, store) {
+export async function sendWelcome(member, store, inviteTracker = null) {
   const config = store.get(member.guild.id);
 
   if (!config.welcomeEnabled || !config.welcomeChannelId) {
@@ -17,17 +17,18 @@ export async function sendWelcome(member, store) {
     return false;
   }
 
-  const payload = await buildWelcomePayload(member, config);
+  const inviteInfo = await resolveInviteInfo(member, config, inviteTracker);
+  const payload = await buildWelcomePayload(member, config, inviteInfo);
   await channel.send(payload);
   return true;
 }
 
-export async function buildWelcomePayload(member, config) {
-  const content = renderWelcomeTemplate(config.welcomeMessage, member);
+export async function buildWelcomePayload(member, config, inviteInfo = null) {
+  const content = renderWelcomeTemplate(config.welcomeMessage, member, inviteInfo);
   const files = [];
 
   if (config.welcomeBannerEnabled) {
-    const banner = await createWelcomeBanner(member, config);
+    const banner = await createWelcomeBanner(member, config, inviteInfo);
     files.push(new AttachmentBuilder(banner, { name: BANNER_FILENAME }));
   }
 
@@ -36,36 +37,42 @@ export async function buildWelcomePayload(member, config) {
     files,
     allowedMentions: {
       parse: [],
-      users: [member.id]
+      users: [member.id, inviteInfo?.inviterId].filter(Boolean)
     }
   };
 }
 
-export async function createWelcomeBanner(member, config) {
+export async function createWelcomeBanner(member, config, inviteInfo = null) {
   const { createCanvas, loadImage } = await import("@napi-rs/canvas");
   const canvas = createCanvas(BANNER_WIDTH, BANNER_HEIGHT);
   const context = canvas.getContext("2d");
 
   await drawBackground(context, loadImage, config);
   await drawAvatar(context, loadImage, member);
-  drawBannerText(context, member, config);
+  drawBannerText(context, member, config, inviteInfo);
 
   return canvas.toBuffer("image/png");
 }
 
-export function renderWelcomeTemplate(template, member) {
+export function renderWelcomeTemplate(template, member, inviteInfo = null) {
   const replacements = {
     mention: `<@${member.id}>`,
     username: member.user?.username ?? "friend",
     displayName: member.displayName ?? member.user?.globalName ?? member.user?.username ?? "friend",
     server: member.guild?.name ?? "the server",
-    memberCount: String(member.guild?.memberCount ?? "?")
+    memberCount: String(member.guild?.memberCount ?? "?"),
+    inviterName: inviteInfo?.inviterUsername ?? inviteInfo?.inviterTag ?? "Unknown inviter",
+    inviterMention: inviteInfo?.inviterMention ?? "Unknown inviter",
+    inviterInvites: Number.isFinite(inviteInfo?.inviterInvites)
+      ? String(inviteInfo.inviterInvites)
+      : "?",
+    inviteCode: inviteInfo?.code ?? "unknown"
   };
 
-  return String(template).replace(/\{(mention|username|displayName|server|memberCount)\}/g, (
-    _match,
-    key
-  ) => replacements[key]);
+  return String(template).replace(
+    /\{(mention|username|displayName|server|memberCount|inviterName|inviterMention|inviterInvites|inviteCode)\}/g,
+    (_match, key) => replacements[key]
+  );
 }
 
 async function drawBackground(context, loadImage, config) {
@@ -125,19 +132,35 @@ async function drawAvatar(context, loadImage, member) {
   context.restore();
 }
 
-function drawBannerText(context, member, config) {
-  const title = renderWelcomeTemplate(config.welcomeBannerTitle, member);
-  const subtitle = renderWelcomeTemplate(config.welcomeBannerSubtitle, member);
+function drawBannerText(context, member, config, inviteInfo) {
+  const title = renderWelcomeTemplate(config.welcomeBannerTitle, member, inviteInfo);
+  const subtitle = renderWelcomeTemplate(config.welcomeBannerSubtitle, member, inviteInfo);
+  const inviteLine = config.welcomeShowInviter
+    ? renderWelcomeTemplate(config.welcomeBannerInviteLine, member, inviteInfo)
+    : "";
   const textX = 340;
   const maxWidth = 600;
 
   context.fillStyle = config.welcomeBannerTextColor;
   context.textBaseline = "top";
-  context.font = `800 ${fitFontSize(context, title, maxWidth, 60, 34, 800)}px Arial`;
-  context.fillText(title, textX, 118);
+  context.font = `800 ${fitFontSize(context, title, maxWidth, 56, 32, 800)}px Arial`;
+  context.fillText(title, textX, inviteLine ? 84 : 118);
 
-  context.font = `600 ${fitFontSize(context, subtitle, maxWidth, 34, 22, 600)}px Arial`;
-  wrapText(context, subtitle, textX, 202, maxWidth, 42, 2);
+  context.font = `600 ${fitFontSize(context, subtitle, maxWidth, 32, 21, 600)}px Arial`;
+  wrapText(context, subtitle, textX, inviteLine ? 164 : 202, maxWidth, 40, 2);
+
+  if (inviteLine) {
+    context.font = `700 ${fitFontSize(context, inviteLine, maxWidth, 28, 18, 700)}px Arial`;
+    wrapText(context, inviteLine, textX, 260, maxWidth, 34, 1);
+  }
+}
+
+async function resolveInviteInfo(member, config, inviteTracker) {
+  if (!config.welcomeInviteTrackingEnabled || !config.welcomeShowInviter || !inviteTracker) {
+    return null;
+  }
+
+  return inviteTracker.identifyInvite(member.guild).catch(() => null);
 }
 
 async function loadRemoteImage(loadImage, url) {

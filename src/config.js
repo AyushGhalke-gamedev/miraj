@@ -68,10 +68,13 @@ export const DEFAULT_CONFIG = Object.freeze({
   logChannelId: null,
   welcomeEnabled: false,
   welcomeChannelId: null,
-  welcomeMessage: "Welcome to {server}, {mention}! We're so glad you're here.",
+  welcomeInviteTrackingEnabled: true,
+  welcomeShowInviter: true,
+  welcomeMessage: "Welcome {mention} to {server}!\nInvited by {inviterName} - they now have {inviterInvites} invites.\nWe hope you enjoy your stay!",
   welcomeBannerEnabled: true,
   welcomeBannerTitle: "Welcome, {username}",
   welcomeBannerSubtitle: "You are member #{memberCount} in {server}.",
+  welcomeBannerInviteLine: "Invited by {inviterName} - {inviterInvites} invites",
   welcomeBannerBackgroundUrl: null,
   welcomeBannerBackgroundColor: "#20232a",
   welcomeBannerAccentColor: "#5b8def",
@@ -160,6 +163,14 @@ export function normalizeGuildConfig(config = {}) {
     logChannelId: readNullableId(merged.logChannelId),
     welcomeEnabled: readBoolean(merged.welcomeEnabled, DEFAULT_CONFIG.welcomeEnabled),
     welcomeChannelId: readNullableId(merged.welcomeChannelId),
+    welcomeInviteTrackingEnabled: readBoolean(
+      merged.welcomeInviteTrackingEnabled,
+      DEFAULT_CONFIG.welcomeInviteTrackingEnabled
+    ),
+    welcomeShowInviter: readBoolean(
+      merged.welcomeShowInviter,
+      DEFAULT_CONFIG.welcomeShowInviter
+    ),
     welcomeMessage: readText(merged.welcomeMessage, DEFAULT_CONFIG.welcomeMessage, 1000),
     welcomeBannerEnabled: readBoolean(
       merged.welcomeBannerEnabled,
@@ -173,6 +184,11 @@ export function normalizeGuildConfig(config = {}) {
     welcomeBannerSubtitle: readText(
       merged.welcomeBannerSubtitle,
       DEFAULT_CONFIG.welcomeBannerSubtitle,
+      180
+    ),
+    welcomeBannerInviteLine: readText(
+      merged.welcomeBannerInviteLine,
+      DEFAULT_CONFIG.welcomeBannerInviteLine,
       180
     ),
     welcomeBannerBackgroundUrl: readNullableUrl(merged.welcomeBannerBackgroundUrl),

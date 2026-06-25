@@ -22,11 +22,17 @@ test("normalizes chat protection lists", () => {
     badWords: "Alpha\nbeta, beta",
     scamDomains: "Bad.Example\nwww.fake.test",
     botProfileNick: "  Custom Guard  ",
-    botProfileBio: "  Watching this server kindly.  "
+    botProfileBio: "  Watching this server kindly.  ",
+    welcomeInviteTrackingEnabled: false,
+    welcomeShowInviter: false,
+    welcomeBannerInviteLine: "Invited by {inviterName}"
   });
 
   assert.deepEqual(config.badWords, ["alpha", "beta"]);
   assert.deepEqual(config.scamDomains, ["bad.example", "www.fake.test"]);
   assert.equal(config.botProfileNick, "Custom Guard");
   assert.equal(config.botProfileBio, "Watching this server kindly.");
+  assert.equal(config.welcomeInviteTrackingEnabled, false);
+  assert.equal(config.welcomeShowInviter, false);
+  assert.equal(config.welcomeBannerInviteLine, "Invited by {inviterName}");
 });

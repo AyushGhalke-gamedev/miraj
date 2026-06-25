@@ -6,6 +6,7 @@ A Discord bot that watches server messages for spam and can automatically timeou
 
 - Sends wholesome welcome messages when new members join.
 - Generates custom welcome banner images with the new member's profile picture.
+- Tracks which invite was used and can show the inviter in welcome messages and banners.
 - Includes a password-protected web dashboard for server settings.
 - Lets admins customize the bot's per-server profile from the dashboard.
 - Detects flood spam, repeated messages, invite links, scam links, bad words, mention spam, emoji spam, zalgo text, ghost pings, and excessive caps.
@@ -68,8 +69,9 @@ If you do not want to give the bot Administrator, grant these permissions instea
    - Ban Members
    - Manage Channels
    - Manage Nicknames
+   - Manage Server
 
-The matching non-Administrator permissions integer is `1099645971478`. The Administrator permissions integer is `8`.
+The matching non-Administrator permissions integer is `1099645971510`. The Administrator permissions integer is `8`.
 
 5. Install dependencies and deploy commands:
 
@@ -108,10 +110,13 @@ Members with `Administrator`, `Manage Messages`, or `Moderate Members` are ignor
 ## Default Welcome Settings
 
 - Enabled: no
+- Invite tracking: yes
+- Show inviter: yes
 - Banner image: yes
-- Message: `Welcome to {server}, {mention}! We're so glad you're here.`
+- Message: `Welcome {mention} to {server}!`
 - Banner title: `Welcome, {username}`
 - Banner subtitle: `You are member #{memberCount} in {server}.`
+- Banner invite line: `Invited by {inviterName} - {inviterInvites} invites`
 
 Welcome placeholders:
 
@@ -120,12 +125,17 @@ Welcome placeholders:
 - `{displayName}`
 - `{server}`
 - `{memberCount}`
+- `{inviterName}`
+- `{inviterMention}`
+- `{inviterInvites}`
+- `{inviteCode}`
 
 ## Dashboard
 
 The dashboard lets admins configure:
 
 - Welcome channel, message, banner text, banner colors, and banner background URL.
+- Invite tracking controls and welcome-banner inviter text.
 - Bot server profile: server name/nickname, server bio, server avatar, and server banner.
 - Flood limits, spam window, duplicate limit, mention limit, caps threshold, emoji threshold, zalgo threshold, ghost-ping window, AutoMod strike reset, strike mute duration, and strike threshold.
 - Invite blocking, scam-domain blocking, bad-word blocking, and custom word/domain lists.
@@ -135,6 +145,8 @@ The dashboard lets admins configure:
 Moderation DMs are best-effort. If a user has DMs closed or blocks the bot, the moderation action still completes.
 
 The Bot Profile tab uses Discord's per-server bot profile fields. It does not change the bot's global username/profile for every server.
+
+Invite tracking compares invite use counts when members join. It requires the bot to have `Manage Server`; if invites cannot be fetched, the welcome still sends with unknown inviter placeholders.
 
 Set `DASHBOARD_PASSWORD` before exposing the dashboard beyond your own machine. By default it binds to `127.0.0.1`.
 

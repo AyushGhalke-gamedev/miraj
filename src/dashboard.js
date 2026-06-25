@@ -172,7 +172,7 @@ export function startDashboard(client, store) {
 
     const member = guild.members.me ?? await guild.members.fetchMe();
     const config = store.get(guild.id);
-    const banner = await createWelcomeBanner(member, config);
+    const banner = await createWelcomeBanner(member, config, previewInviteInfo());
 
     response.type("png").send(banner);
   });
@@ -295,6 +295,8 @@ function renderGuildSettings({ guild, config, botMember, channels, roles, saved 
       <div class="two-column">
         <div class="field-stack">
           ${renderChannelSelect("welcome_channel_id", "Welcome channel", channels, config.welcomeChannelId)}
+          ${renderToggle("welcome_invite_tracking_enabled", config.welcomeInviteTrackingEnabled, "Track invite source")}
+          ${renderToggle("welcome_show_inviter", config.welcomeShowInviter, "Show inviter in welcome")}
           <label>
             <span>Welcome message</span>
             <textarea name="welcome_message" rows="5" maxlength="1000">${escapeHtml(config.welcomeMessage)}</textarea>
@@ -306,6 +308,10 @@ function renderGuildSettings({ guild, config, botMember, channels, roles, saved 
           <label>
             <span>Banner subtitle</span>
             <input name="welcome_banner_subtitle" maxlength="180" value="${escapeHtml(config.welcomeBannerSubtitle)}">
+          </label>
+          <label>
+            <span>Banner invite line</span>
+            <input name="welcome_banner_invite_line" maxlength="180" value="${escapeHtml(config.welcomeBannerInviteLine)}">
           </label>
         </div>
         <div class="field-stack">
@@ -595,10 +601,13 @@ function readSettingsPatch(body) {
     logChannelId: body.log_channel_id || null,
     welcomeEnabled: body.welcome_enabled === "on",
     welcomeChannelId: body.welcome_channel_id || null,
+    welcomeInviteTrackingEnabled: body.welcome_invite_tracking_enabled === "on",
+    welcomeShowInviter: body.welcome_show_inviter === "on",
     welcomeMessage: body.welcome_message,
     welcomeBannerEnabled: body.welcome_banner_enabled === "on",
     welcomeBannerTitle: body.welcome_banner_title,
     welcomeBannerSubtitle: body.welcome_banner_subtitle,
+    welcomeBannerInviteLine: body.welcome_banner_invite_line,
     welcomeBannerBackgroundUrl: body.welcome_banner_background_url || null,
     welcomeBannerBackgroundColor: body.welcome_banner_background_color,
     welcomeBannerAccentColor: body.welcome_banner_accent_color,
@@ -626,6 +635,17 @@ async function getRoles(guild) {
 function getGuilds(client) {
   return [...client.guilds.cache.values()]
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function previewInviteInfo() {
+  return {
+    code: "welcome",
+    inviterId: null,
+    inviterTag: "im_mercyxx",
+    inviterUsername: "im_mercyxx",
+    inviterMention: "im_mercyxx",
+    inviterInvites: 1
+  };
 }
 
 function isAuthenticated(request, secret) {

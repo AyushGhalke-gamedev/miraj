@@ -17,6 +17,30 @@ test("welcome templates replace member and server placeholders", () => {
   );
 });
 
+test("welcome templates replace inviter placeholders", () => {
+  const member = {
+    id: "123",
+    displayName: "Captain",
+    user: { username: "ayush" },
+    guild: { name: "Code Club", memberCount: 42 }
+  };
+  const inviteInfo = {
+    code: "abc",
+    inviterUsername: "mercy",
+    inviterMention: "<@999>",
+    inviterInvites: 7
+  };
+
+  assert.equal(
+    renderWelcomeTemplate(
+      "Invited by {inviterName} using {inviteCode}; they now have {inviterInvites}.",
+      member,
+      inviteInfo
+    ),
+    "Invited by mercy using abc; they now have 7."
+  );
+});
+
 test("welcome config normalizes colors and custom background URLs", () => {
   const config = normalizeGuildConfig({
     welcomeEnabled: true,

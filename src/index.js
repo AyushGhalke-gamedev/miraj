@@ -8,6 +8,7 @@ import {
 } from "discord.js";
 import { isCommandEnabled, updateIdList } from "./config.js";
 import { startDashboard } from "./dashboard.js";
+import { InviteTracker } from "./inviteTracker.js";
 import { configStore } from "./store.js";
 import { SpamTracker } from "./spamDetector.js";
 import { sendWelcome } from "./welcome.js";
@@ -39,10 +40,12 @@ if (!token) {
 await configStore.load();
 
 const spamTracker = new SpamTracker();
+const inviteTracker = new InviteTracker();
 let dashboardStarted = false;
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildInvites,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent
@@ -52,11 +55,22 @@ const client = new Client({
 
 client.once(Events.ClientReady, (readyClient) => {
   console.log(`Logged in as ${readyClient.user.tag}. Watching ${readyClient.guilds.cache.size} servers.`);
+  inviteTracker.warmGuilds(readyClient.guilds.cache).catch((error) => {
+    console.warn(`Could not warm invite cache: ${error.message}`);
+  });
 
   if (!dashboardStarted) {
     startDashboard(readyClient, configStore);
     dashboardStarted = true;
   }
+});
+
+client.on(Events.InviteCreate, (invite) => {
+  inviteTracker.rememberCreatedInvite(invite);
+});
+
+client.on(Events.InviteDelete, (invite) => {
+  inviteTracker.forgetDeletedInvite(invite);
 });
 
 client.on(Events.MessageCreate, async (message) => {
@@ -77,7 +91,7 @@ client.on(Events.MessageDelete, async (message) => {
 
 client.on(Events.GuildMemberAdd, async (member) => {
   try {
-    await sendWelcome(member, configStore);
+    await sendWelcome(member, configStore, inviteTracker);
   } catch (error) {
     console.error("Failed to send welcome message:", error);
   }
