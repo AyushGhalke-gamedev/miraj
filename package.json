@@ -1,0 +1,24 @@
+{
+  "name": "discord-spam-guard",
+  "version": "1.0.0",
+  "description": "Discord anti-spam bot with automatic timeouts and admin slash commands.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "deploy": "node src/deploy-commands.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.1",
+    "discord.js": "^14.26.4",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
+  },
+  "overrides": {
+    "undici": "6.27.0"
+  }
+}
