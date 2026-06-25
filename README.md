@@ -86,6 +86,8 @@ Use `DISCORD_GUILD_ID` for fast command updates while testing. Remove it later a
 
 When `DASHBOARD_PASSWORD` is set, `npm start` also starts the dashboard at `http://127.0.0.1:3000`. Change `DASHBOARD_PORT` or `DASHBOARD_HOST` in `.env` if needed.
 
+This project is pinned to Node 22. If you see `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 94`, switch away from Node 26, reinstall dependencies, and run again.
+
 ## Default Chat Protection Settings
 
 - Enabled: yes
