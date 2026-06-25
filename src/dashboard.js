@@ -20,7 +20,7 @@ export function startDashboard(client, store) {
   }
 
   const app = express();
-  const port = readPort(process.env.DASHBOARD_PORT, 3000);
+  const port = readPort(process.env.PORT ?? process.env.DASHBOARD_PORT, 3000);
   const host = process.env.DASHBOARD_HOST || "127.0.0.1";
   const secret = process.env.DASHBOARD_SECRET || crypto
     .createHash("sha256")
