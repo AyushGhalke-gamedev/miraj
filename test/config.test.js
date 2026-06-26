@@ -25,7 +25,8 @@ test("normalizes chat protection lists", () => {
     botProfileBio: "  Watching this server kindly.  ",
     welcomeInviteTrackingEnabled: false,
     welcomeShowInviter: false,
-    welcomeBannerInviteLine: "Invited by {inviterName}"
+    welcomeBannerInviteLine: "Invited by {inviterName}",
+    commandPrefix: "  mod  "
   });
 
   assert.deepEqual(config.badWords, ["alpha", "beta"]);
@@ -35,6 +36,7 @@ test("normalizes chat protection lists", () => {
   assert.equal(config.welcomeInviteTrackingEnabled, false);
   assert.equal(config.welcomeShowInviter, false);
   assert.equal(config.welcomeBannerInviteLine, "Invited by {inviterName}");
+  assert.equal(config.commandPrefix, "mod");
 });
 
 test("normalizes fun module settings", () => {

@@ -1,3 +1,5 @@
+import { DEFAULT_COMMAND_PREFIX, normalizeCommandPrefix } from "./messageCommands.js";
+
 export const MAX_TIMEOUT_MINUTES = 28 * 24 * 60;
 
 export const COMMAND_TOGGLE_KEYS = Object.freeze([
@@ -97,6 +99,7 @@ export const DEFAULT_CONFIG = Object.freeze({
     "steamcommunnity.com",
     "steancommunity.com"
   ],
+  commandPrefix: DEFAULT_COMMAND_PREFIX,
   commandToggles: DEFAULT_COMMAND_TOGGLES,
   dmModerationEnabled: true,
   botProfileNick: null,
@@ -226,6 +229,10 @@ export function normalizeGuildConfig(config = {}) {
     strikeMuteThreshold: readInteger("strikeMuteThreshold", merged.strikeMuteThreshold),
     badWords: readWordList(merged.badWords),
     scamDomains: readWordList(merged.scamDomains, DEFAULT_CONFIG.scamDomains),
+    commandPrefix: normalizeCommandPrefix(
+      merged.commandPrefix,
+      DEFAULT_CONFIG.commandPrefix
+    ),
     commandToggles: readCommandToggles(merged.commandToggles),
     dmModerationEnabled: readBoolean(
       merged.dmModerationEnabled,

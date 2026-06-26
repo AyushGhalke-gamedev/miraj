@@ -15,6 +15,7 @@ import {
   renderGuessTemplate
 } from "./funBanners.js";
 import { InviteTracker } from "./inviteTracker.js";
+import { parseMessageCommand, tokenizeCommandArgs } from "./messageCommands.js";
 import { configStore } from "./store.js";
 import { SpamTracker } from "./spamDetector.js";
 import { buildWelcomePayload, sendWelcome } from "./welcome.js";
@@ -130,45 +131,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    if (interaction.commandName === "antispam") {
-      await handleAntispamCommand(interaction);
-    } else if (interaction.commandName === "achievement") {
-      await handleAchievementCommand(interaction);
-    } else if (interaction.commandName === "birthday") {
-      await handleBirthdayCommand(interaction);
-    } else if (interaction.commandName === "guessnumber") {
-      await handleGuessNumberCommand(interaction);
-    } else if (interaction.commandName === "mute" || interaction.commandName === "timeout") {
-      await handleMuteCommand(interaction);
-    } else if (interaction.commandName === "unmute") {
-      await handleUnmuteCommand(interaction);
-    } else if (interaction.commandName === "warn") {
-      await handleWarnCommand(interaction);
-    } else if (interaction.commandName === "warnings") {
-      await handleWarningsCommand(interaction);
-    } else if (interaction.commandName === "clearwarnings") {
-      await handleClearWarningsCommand(interaction);
-    } else if (interaction.commandName === "kick") {
-      await handleKickCommand(interaction);
-    } else if (interaction.commandName === "ban") {
-      await handleBanCommand(interaction);
-    } else if (interaction.commandName === "unban") {
-      await handleUnbanCommand(interaction);
-    } else if (interaction.commandName === "softban") {
-      await handleSoftbanCommand(interaction);
-    } else if (interaction.commandName === "purge" || interaction.commandName === "clear") {
-      await handlePurgeCommand(interaction);
-    } else if (interaction.commandName === "slowmode") {
-      await handleSlowmodeCommand(interaction);
-    } else if (interaction.commandName === "lockdown") {
-      await handleLockdownCommand(interaction, true);
-    } else if (interaction.commandName === "unlockdown") {
-      await handleLockdownCommand(interaction, false);
-    } else if (interaction.commandName === "nickreset") {
-      await handleNickresetCommand(interaction);
-    } else if (interaction.commandName === "welcometest") {
-      await handleWelcomeTestCommand(interaction);
-    }
+    await dispatchCommand(interaction);
   } catch (error) {
     console.error("Failed to handle command:", error);
     await replySafely(interaction, {
@@ -179,12 +142,58 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 await client.login(token);
 
+async function dispatchCommand(interaction) {
+  if (interaction.commandName === "antispam") {
+    await handleAntispamCommand(interaction);
+  } else if (interaction.commandName === "achievement") {
+    await handleAchievementCommand(interaction);
+  } else if (interaction.commandName === "birthday") {
+    await handleBirthdayCommand(interaction);
+  } else if (interaction.commandName === "guessnumber") {
+    await handleGuessNumberCommand(interaction);
+  } else if (interaction.commandName === "mute" || interaction.commandName === "timeout") {
+    await handleMuteCommand(interaction);
+  } else if (interaction.commandName === "unmute") {
+    await handleUnmuteCommand(interaction);
+  } else if (interaction.commandName === "warn") {
+    await handleWarnCommand(interaction);
+  } else if (interaction.commandName === "warnings") {
+    await handleWarningsCommand(interaction);
+  } else if (interaction.commandName === "clearwarnings") {
+    await handleClearWarningsCommand(interaction);
+  } else if (interaction.commandName === "kick") {
+    await handleKickCommand(interaction);
+  } else if (interaction.commandName === "ban") {
+    await handleBanCommand(interaction);
+  } else if (interaction.commandName === "unban") {
+    await handleUnbanCommand(interaction);
+  } else if (interaction.commandName === "softban") {
+    await handleSoftbanCommand(interaction);
+  } else if (interaction.commandName === "purge" || interaction.commandName === "clear") {
+    await handlePurgeCommand(interaction);
+  } else if (interaction.commandName === "slowmode") {
+    await handleSlowmodeCommand(interaction);
+  } else if (interaction.commandName === "lockdown") {
+    await handleLockdownCommand(interaction, true);
+  } else if (interaction.commandName === "unlockdown") {
+    await handleLockdownCommand(interaction, false);
+  } else if (interaction.commandName === "nickreset") {
+    await handleNickresetCommand(interaction);
+  } else if (interaction.commandName === "welcometest") {
+    await handleWelcomeTestCommand(interaction);
+  }
+}
+
 async function handleMessage(message) {
   if (!message.guild) {
     return;
   }
 
   const config = configStore.get(message.guild.id);
+
+  if (await handleMessageCommand(message, config)) {
+    return;
+  }
 
   if (await handleGuessNumberMessage(message, config)) {
     return;
@@ -249,6 +258,815 @@ async function handleDeletedMessage(message) {
   });
 }
 
+async function handleMessageCommand(message, config) {
+  if (message.author?.bot || message.system || message.webhookId) {
+    return false;
+  }
+
+  const parsed = parseMessageCommand(message.content, config.commandPrefix);
+
+  if (!parsed) {
+    return false;
+  }
+
+  const commandName = normalizeMessageCommandName(parsed.commandName);
+  const preliminarySubcommand = tokenizeCommandArgs(parsed.argsText)[0]?.value?.toLowerCase() ?? null;
+
+  if (!isCommandEnabled(config, commandName)) {
+    await replyToMessageCommand(message, {
+      content: `${formatMessageCommandExample(parsed.prefix, commandName)} is currently disabled for this server.`
+    });
+    return true;
+  }
+
+  const authorMember = message.member
+    ?? await message.guild.members.fetch(message.author.id).catch(() => null);
+
+  if (commandRequiresAdministrator(commandName, preliminarySubcommand) && !hasAdministrator(authorMember)) {
+    await replyToMessageCommand(message, {
+      content: "Only server administrators can use this bot's admin commands."
+    });
+    return true;
+  }
+
+  const optionsResult = await buildMessageCommandOptions(message, commandName, parsed.argsText);
+
+  if (optionsResult.error) {
+    await replyToMessageCommand(message, {
+      content: `${optionsResult.error}\nExample: \`${formatMessageCommandExample(parsed.prefix, commandName)}\``
+    });
+    return true;
+  }
+
+  const interaction = createMessageCommandInteraction(message, commandName, optionsResult.data, authorMember);
+  await dispatchCommand(interaction);
+  return true;
+}
+
+async function buildMessageCommandOptions(message, commandName, argsText) {
+  const tokens = tokenizeCommandArgs(argsText);
+  const data = createOptionData();
+
+  if (commandName === "warn") {
+    const userResult = await readRequiredUser(message, tokens[0]);
+
+    if (userResult.error) {
+      return userResult;
+    }
+
+    const reason = readRest(argsText, tokens, 1);
+
+    if (!reason) {
+      return { error: "Add a warning reason after the user." };
+    }
+
+    data.users.set("user", userResult.user);
+    data.strings.set("reason", reason.slice(0, 500));
+    return { data };
+  }
+
+  if (commandName === "warnings") {
+    const userResult = await readRequiredUser(message, tokens[0]);
+
+    if (userResult.error) {
+      return userResult;
+    }
+
+    data.users.set("user", userResult.user);
+    return { data };
+  }
+
+  if (commandName === "clearwarnings") {
+    const userResult = await readRequiredUser(message, tokens[0]);
+
+    if (userResult.error) {
+      return userResult;
+    }
+
+    data.users.set("user", userResult.user);
+
+    if (tokens[1]) {
+      const amount = readIntegerToken(tokens[1]);
+
+      if (!amount || amount < 1) {
+        return { error: "The amount must be a positive number." };
+      }
+
+      data.integers.set("amount", amount);
+    }
+
+    return { data };
+  }
+
+  if (commandName === "mute" || commandName === "timeout") {
+    const userResult = await readRequiredUser(message, tokens[0]);
+
+    if (userResult.error) {
+      return userResult;
+    }
+
+    const minutes = readIntegerToken(tokens[1]);
+
+    if (!minutes || minutes < 1) {
+      return { error: "Add a timeout length in minutes after the user." };
+    }
+
+    data.users.set("user", userResult.user);
+    data.integers.set("minutes", minutes);
+    data.strings.set("reason", readRest(argsText, tokens, 2) || null);
+    return { data };
+  }
+
+  if (["unmute", "kick", "nickreset"].includes(commandName)) {
+    const userResult = await readRequiredUser(message, tokens[0]);
+
+    if (userResult.error) {
+      return userResult;
+    }
+
+    data.users.set("user", userResult.user);
+    data.strings.set("reason", readRest(argsText, tokens, 1) || null);
+    return { data };
+  }
+
+  if (commandName === "ban" || commandName === "softban") {
+    const userResult = await readRequiredUser(message, tokens[0]);
+
+    if (userResult.error) {
+      return userResult;
+    }
+
+    let reasonStart = 1;
+    const deleteDays = readIntegerToken(tokens[1]);
+
+    if (Number.isInteger(deleteDays)) {
+      data.integers.set("delete_message_days", Math.min(7, Math.max(0, deleteDays)));
+      reasonStart = 2;
+    }
+
+    data.users.set("user", userResult.user);
+    data.strings.set("reason", readRest(argsText, tokens, reasonStart) || null);
+    return { data };
+  }
+
+  if (commandName === "unban") {
+    const userId = extractSnowflake(tokens[0]?.value, "user");
+
+    if (!userId) {
+      return { error: "Add the Discord user ID to unban." };
+    }
+
+    data.strings.set("user_id", userId);
+    data.strings.set("reason", readRest(argsText, tokens, 1) || null);
+    return { data };
+  }
+
+  if (commandName === "purge" || commandName === "clear") {
+    const amount = readIntegerToken(tokens[0]);
+
+    if (!amount || amount < 1) {
+      return { error: "Add how many messages to delete." };
+    }
+
+    let reasonStart = 1;
+    data.integers.set("amount", Math.min(100, amount));
+
+    if (tokens[1] && looksLikeUserToken(tokens[1].value)) {
+      const userResult = await readRequiredUser(message, tokens[1]);
+
+      if (userResult.error) {
+        return userResult;
+      }
+
+      data.users.set("user", userResult.user);
+      reasonStart = 2;
+    }
+
+    data.strings.set("reason", readRest(argsText, tokens, reasonStart) || null);
+    return { data };
+  }
+
+  if (commandName === "slowmode") {
+    const seconds = readIntegerToken(tokens[0]);
+
+    if (!Number.isInteger(seconds) || seconds < 0) {
+      return { error: "Add a slowmode length in seconds. Use 0 to disable it." };
+    }
+
+    data.integers.set("seconds", Math.min(21600, seconds));
+    data.strings.set("reason", readRest(argsText, tokens, 1) || null);
+    return { data };
+  }
+
+  if (commandName === "lockdown" || commandName === "unlockdown") {
+    let reasonStart = 0;
+
+    if (tokens[0] && looksLikeChannelToken(tokens[0].value)) {
+      const channelResult = await readChannel(message, tokens[0]);
+
+      if (channelResult.error) {
+        return channelResult;
+      }
+
+      data.channels.set("channel", channelResult.channel);
+      reasonStart = 1;
+    }
+
+    data.strings.set("reason", readRest(argsText, tokens, reasonStart) || null);
+    return { data };
+  }
+
+  if (commandName === "welcometest") {
+    const result = await readOptionalChannelAndUser(message, tokens);
+
+    if (result.error) {
+      return result;
+    }
+
+    if (result.channel) {
+      data.channels.set("channel", result.channel);
+    }
+
+    if (result.user) {
+      data.users.set("user", result.user);
+    }
+
+    return { data };
+  }
+
+  if (commandName === "antispam") {
+    return buildAntispamMessageOptions(message, argsText, tokens);
+  }
+
+  if (commandName === "guessnumber") {
+    return buildGuessNumberMessageOptions(message, tokens);
+  }
+
+  if (commandName === "birthday") {
+    return buildBirthdayMessageOptions(message, tokens);
+  }
+
+  if (commandName === "achievement") {
+    return buildAchievementMessageOptions(message, tokens);
+  }
+
+  return { error: `Unknown command \`${commandName}\`.` };
+}
+
+async function buildAntispamMessageOptions(message, argsText, tokens) {
+  const subcommand = tokens[0]?.value?.toLowerCase();
+  const data = createOptionData(subcommand);
+
+  if (!["status", "set", "ignore-channel", "ignore-role"].includes(subcommand)) {
+    return { error: "Use `status`, `set`, `ignore-channel`, or `ignore-role` after antispam." };
+  }
+
+  if (subcommand === "status") {
+    return { data };
+  }
+
+  if (subcommand === "ignore-channel") {
+    const action = tokens[1]?.value?.toLowerCase();
+
+    if (!["add", "remove"].includes(action)) {
+      return { error: "Use `add` or `remove` before the channel." };
+    }
+
+    const channelResult = await readChannel(message, tokens[2]);
+
+    if (channelResult.error) {
+      return channelResult;
+    }
+
+    data.strings.set("action", action);
+    data.channels.set("channel", channelResult.channel);
+    return { data };
+  }
+
+  if (subcommand === "ignore-role") {
+    const action = tokens[1]?.value?.toLowerCase();
+
+    if (!["add", "remove"].includes(action)) {
+      return { error: "Use `add` or `remove` before the role." };
+    }
+
+    const roleResult = await readRole(message, tokens[2]);
+
+    if (roleResult.error) {
+      return roleResult;
+    }
+
+    data.strings.set("action", action);
+    data.roles.set("role", roleResult.role);
+    return { data };
+  }
+
+  const setResult = await readAntispamSetOptions(message, tokenizeCommandArgs(readRest(argsText, tokens, 1)));
+
+  if (setResult.error) {
+    return setResult;
+  }
+
+  mergeOptionData(data, setResult.data);
+  return { data };
+}
+
+async function buildGuessNumberMessageOptions(message, tokens) {
+  const subcommand = tokens[0]?.value?.toLowerCase();
+  const data = createOptionData(subcommand);
+
+  if (!["start", "guess", "join", "leave", "status", "stop"].includes(subcommand)) {
+    return { error: "Use `start`, `guess`, `join`, `leave`, `status`, or `stop` after guessnumber." };
+  }
+
+  if (subcommand === "guess") {
+    const number = readIntegerToken(tokens[1]);
+
+    if (!Number.isInteger(number)) {
+      return { error: "Add the number you want to guess." };
+    }
+
+    data.integers.set("number", number);
+    return { data };
+  }
+
+  if (subcommand !== "start") {
+    return { data };
+  }
+
+  let index = 1;
+
+  if (tokens[index] && looksLikeChannelToken(tokens[index].value)) {
+    const channelResult = await readChannel(message, tokens[index]);
+
+    if (channelResult.error) {
+      return channelResult;
+    }
+
+    data.channels.set("channel", channelResult.channel);
+    index += 1;
+  }
+
+  const min = readIntegerToken(tokens[index]);
+  const max = readIntegerToken(tokens[index + 1]);
+  const attempts = readIntegerToken(tokens[index + 2]);
+
+  if (Number.isInteger(min)) {
+    data.integers.set("min", min);
+  }
+
+  if (Number.isInteger(max)) {
+    data.integers.set("max", max);
+  }
+
+  if (Number.isInteger(attempts)) {
+    data.integers.set("attempts", attempts);
+  }
+
+  return { data };
+}
+
+async function buildBirthdayMessageOptions(message, tokens) {
+  const subcommand = tokens[0]?.value?.toLowerCase();
+  const data = createOptionData(subcommand);
+
+  if (!["set", "clear", "view", "test"].includes(subcommand)) {
+    return { error: "Use `set`, `clear`, `view`, or `test` after birthday." };
+  }
+
+  if (subcommand === "set") {
+    const month = readIntegerToken(tokens[1]);
+    const day = readIntegerToken(tokens[2]);
+
+    if (!Number.isInteger(month) || !Number.isInteger(day)) {
+      return { error: "Add the month and day after birthday set." };
+    }
+
+    data.integers.set("month", month);
+    data.integers.set("day", day);
+    return { data };
+  }
+
+  if (subcommand === "view" && tokens[1]) {
+    const userResult = await readRequiredUser(message, tokens[1]);
+
+    if (userResult.error) {
+      return userResult;
+    }
+
+    data.users.set("user", userResult.user);
+  }
+
+  if (subcommand === "test") {
+    const result = await readOptionalChannelAndUser(message, tokens.slice(1));
+
+    if (result.error) {
+      return result;
+    }
+
+    if (result.channel) {
+      data.channels.set("channel", result.channel);
+    }
+
+    if (result.user) {
+      data.users.set("user", result.user);
+    }
+  }
+
+  return { data };
+}
+
+async function buildAchievementMessageOptions(message, tokens) {
+  const subcommand = tokens[0]?.value?.toLowerCase();
+  const data = createOptionData(subcommand);
+
+  if (!["catalog", "list", "grant", "revoke"].includes(subcommand)) {
+    return { error: "Use `catalog`, `list`, `grant`, or `revoke` after achievement." };
+  }
+
+  if (subcommand === "list" && tokens[1]) {
+    const userResult = await readRequiredUser(message, tokens[1]);
+
+    if (userResult.error) {
+      return userResult;
+    }
+
+    data.users.set("user", userResult.user);
+    return { data };
+  }
+
+  if (subcommand === "grant" || subcommand === "revoke") {
+    const userResult = await readRequiredUser(message, tokens[1]);
+
+    if (userResult.error) {
+      return userResult;
+    }
+
+    if (!tokens[2]?.value) {
+      return { error: "Add the achievement key after the user." };
+    }
+
+    data.users.set("user", userResult.user);
+    data.strings.set("key", tokens[2].value);
+  }
+
+  return { data };
+}
+
+async function readAntispamSetOptions(message, tokens) {
+  const data = createOptionData();
+  const booleanNames = new Map([
+    ["enabled", "enabled"],
+    ["auto_mute", "auto_mute"],
+    ["automute", "auto_mute"],
+    ["delete_spam", "delete_spam"],
+    ["delete", "delete_spam"],
+    ["block_invites", "block_invites"],
+    ["anti_invite", "block_invites"],
+    ["clear_log_channel", "clear_log_channel"]
+  ]);
+  const integerNames = new Map([
+    ["message_limit", "message_limit"],
+    ["window_seconds", "window_seconds"],
+    ["duplicate_limit", "duplicate_limit"],
+    ["mention_limit", "mention_limit"],
+    ["mute_minutes", "mute_minutes"]
+  ]);
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const parts = tokens[index].value.split("=");
+    const key = parts[0]?.toLowerCase();
+    const inlineValue = parts.length > 1 ? parts.slice(1).join("=") : null;
+
+    if (key === "log_channel") {
+      const valueToken = inlineValue === null ? tokens[++index] : { value: inlineValue };
+      const channelResult = await readChannel(message, valueToken);
+
+      if (channelResult.error) {
+        return channelResult;
+      }
+
+      data.channels.set("log_channel", channelResult.channel);
+      continue;
+    }
+
+    if (booleanNames.has(key)) {
+      const optionName = booleanNames.get(key);
+      const valueToken = inlineValue === null && optionName !== "clear_log_channel"
+        ? tokens[++index]?.value
+        : inlineValue ?? "true";
+      const value = readBooleanValue(valueToken);
+
+      if (value === null) {
+        return { error: `Use on/off, true/false, or yes/no for ${key}.` };
+      }
+
+      data.booleans.set(optionName, value);
+      continue;
+    }
+
+    if (integerNames.has(key)) {
+      const valueToken = inlineValue === null ? tokens[++index] : { value: inlineValue };
+      const value = readIntegerToken(valueToken);
+
+      if (!Number.isInteger(value)) {
+        return { error: `Add a number for ${key}.` };
+      }
+
+      data.integers.set(integerNames.get(key), value);
+      continue;
+    }
+
+    return { error: `Unknown antispam setting \`${key}\`.` };
+  }
+
+  if (
+    data.booleans.size === 0
+    && data.integers.size === 0
+    && data.channels.size === 0
+  ) {
+    return { error: "Add at least one antispam setting to update." };
+  }
+
+  return { data };
+}
+
+function createMessageCommandInteraction(message, commandName, data, member) {
+  let replied = false;
+
+  return {
+    commandName,
+    guild: message.guild,
+    channel: message.channel,
+    channelId: message.channelId,
+    user: message.author,
+    member,
+    memberPermissions: member?.permissions,
+    get deferred() {
+      return false;
+    },
+    get replied() {
+      return replied;
+    },
+    options: createMessageCommandOptionReader(data),
+    async reply(payload) {
+      replied = true;
+      return message.reply(toMessageReplyPayload(payload));
+    },
+    async followUp(payload) {
+      return message.reply(toMessageReplyPayload(payload));
+    }
+  };
+}
+
+function createMessageCommandOptionReader(data) {
+  return {
+    getSubcommand(required = true) {
+      if (!data.subcommand && required) {
+        throw new Error("Missing subcommand.");
+      }
+
+      return data.subcommand ?? null;
+    },
+    getBoolean(name, required = false) {
+      return readOptionValue(data.booleans, name, required);
+    },
+    getChannel(name, required = false) {
+      return readOptionValue(data.channels, name, required);
+    },
+    getInteger(name, required = false) {
+      return readOptionValue(data.integers, name, required);
+    },
+    getRole(name, required = false) {
+      return readOptionValue(data.roles, name, required);
+    },
+    getString(name, required = false) {
+      return readOptionValue(data.strings, name, required);
+    },
+    getUser(name, required = false) {
+      return readOptionValue(data.users, name, required);
+    }
+  };
+}
+
+function createOptionData(subcommand = null) {
+  return {
+    subcommand,
+    booleans: new Map(),
+    channels: new Map(),
+    integers: new Map(),
+    roles: new Map(),
+    strings: new Map(),
+    users: new Map()
+  };
+}
+
+function mergeOptionData(target, source) {
+  for (const key of ["booleans", "channels", "integers", "roles", "strings", "users"]) {
+    for (const [name, value] of source[key]) {
+      target[key].set(name, value);
+    }
+  }
+}
+
+async function readRequiredUser(message, token) {
+  const userId = extractSnowflake(token?.value, "user");
+
+  if (!userId) {
+    return { error: "Mention a user or provide their Discord user ID." };
+  }
+
+  const member = await message.guild.members.fetch(userId).catch(() => null);
+  const user = member?.user ?? await message.client.users.fetch(userId).catch(() => null);
+
+  if (!user) {
+    return { error: `Could not find user ID ${userId}.` };
+  }
+
+  return { user };
+}
+
+async function readChannel(message, token) {
+  const channelId = extractSnowflake(token?.value, "channel");
+
+  if (!channelId) {
+    return { error: "Mention a channel or provide its Discord channel ID." };
+  }
+
+  const channel = await message.guild.channels.fetch(channelId).catch(() => null);
+
+  if (!channel?.isTextBased?.()) {
+    return { error: `Could not find text channel ID ${channelId}.` };
+  }
+
+  return { channel };
+}
+
+async function readRole(message, token) {
+  const roleId = extractSnowflake(token?.value, "role");
+
+  if (!roleId) {
+    return { error: "Mention a role or provide its Discord role ID." };
+  }
+
+  await message.guild.roles.fetch().catch(() => null);
+  const role = message.guild.roles.cache.get(roleId);
+
+  if (!role) {
+    return { error: `Could not find role ID ${roleId}.` };
+  }
+
+  return { role };
+}
+
+async function readOptionalChannelAndUser(message, tokens) {
+  const result = {};
+
+  for (const token of tokens) {
+    if (looksLikeChannelToken(token.value) && !result.channel) {
+      const channelResult = await readChannel(message, token);
+
+      if (channelResult.error) {
+        return channelResult;
+      }
+
+      result.channel = channelResult.channel;
+      continue;
+    }
+
+    if (looksLikeUserToken(token.value) && !result.user) {
+      const userResult = await readRequiredUser(message, token);
+
+      if (userResult.error) {
+        return userResult;
+      }
+
+      result.user = userResult.user;
+      continue;
+    }
+
+    return { error: `Could not understand \`${token.value}\`. Use a user mention, user ID, channel mention, or channel ID.` };
+  }
+
+  return result;
+}
+
+function readOptionValue(options, name, required) {
+  if (options.has(name)) {
+    return options.get(name);
+  }
+
+  if (required) {
+    throw new Error(`Missing required option ${name}.`);
+  }
+
+  return null;
+}
+
+function readIntegerToken(token) {
+  if (!token || !/^-?\d+$/.test(String(token.value))) {
+    return null;
+  }
+
+  return Number.parseInt(token.value, 10);
+}
+
+function readBooleanValue(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  if (["true", "yes", "on", "enable", "enabled", "1"].includes(normalized)) {
+    return true;
+  }
+
+  if (["false", "no", "off", "disable", "disabled", "0"].includes(normalized)) {
+    return false;
+  }
+
+  return null;
+}
+
+function readRest(argsText, tokens, consumedCount) {
+  if (consumedCount <= 0) {
+    return argsText.trim();
+  }
+
+  const token = tokens[consumedCount - 1];
+  return token ? argsText.slice(token.end).trim() : "";
+}
+
+function extractSnowflake(value, type) {
+  const text = String(value ?? "").trim();
+  const mentionPatterns = {
+    user: /^<@!?(\d{17,20})>$/,
+    channel: /^<#(\d{17,20})>$/,
+    role: /^<@&(\d{17,20})>$/
+  };
+  const mentionMatch = text.match(mentionPatterns[type]);
+
+  if (mentionMatch) {
+    return mentionMatch[1];
+  }
+
+  return /^\d{17,20}$/.test(text) ? text : null;
+}
+
+function looksLikeUserToken(value) {
+  return Boolean(extractSnowflake(value, "user"));
+}
+
+function looksLikeChannelToken(value) {
+  return Boolean(extractSnowflake(value, "channel"));
+}
+
+function normalizeMessageCommandName(commandName) {
+  return commandName === "timeout" ? "timeout" : commandName;
+}
+
+function formatMessageCommandExample(prefix, commandName) {
+  const separator = /^[a-z0-9]$/i.test(prefix.at(-1) ?? "") ? " " : "";
+  const examples = {
+    antispam: "antispam status",
+    achievement: "achievement catalog",
+    birthday: "birthday view @user",
+    ban: "ban @user reason",
+    clear: "clear 10",
+    clearwarnings: "clearwarnings @user 1",
+    guessnumber: "guessnumber status",
+    kick: "kick @user reason",
+    lockdown: "lockdown #channel reason",
+    mute: "mute @user 10 reason",
+    nickreset: "nickreset @user reason",
+    purge: "purge 10",
+    slowmode: "slowmode 5 reason",
+    softban: "softban @user reason",
+    timeout: "timeout @user 10 reason",
+    unban: "unban 123456789012345678 reason",
+    unlockdown: "unlockdown #channel reason",
+    unmute: "unmute @user reason",
+    warn: "warn @user reason",
+    warnings: "warnings @user",
+    welcometest: "welcometest #channel @user"
+  };
+
+  return `${prefix}${separator}${examples[commandName] ?? commandName}`;
+}
+
+function toMessageReplyPayload(payload) {
+  if (typeof payload === "string") {
+    return { content: payload, allowedMentions: { parse: [] } };
+  }
+
+  const { flags, ephemeral, fetchReply, withResponse, ...messagePayload } = payload;
+  return {
+    ...messagePayload,
+    allowedMentions: messagePayload.allowedMentions ?? { parse: [] }
+  };
+}
+
+async function replyToMessageCommand(message, payload) {
+  await message.reply(toMessageReplyPayload(payload));
+}
+
 async function applyAutomodViolation({ guild, user, member, channelId, message, result, config }) {
   const reason = result.reasons.join("; ");
   const now = Date.now();
@@ -268,6 +1086,7 @@ async function applyAutomodViolation({ guild, user, member, channelId, message, 
     source: "automod",
     createdAt: now
   });
+  const totalWarnings = configStore.getWarnings(guild.id, user.id).length;
   const activeWarnings = configStore.getActiveWarnings(guild.id, user.id, {
     source: "automod",
     since: now - config.strikeResetHours * 60 * 60 * 1000
@@ -292,17 +1111,33 @@ async function applyAutomodViolation({ guild, user, member, channelId, message, 
 
   await sendModerationDm(user, guild, config, {
     action: muted ? "AutoMod timeout" : "AutoMod warning",
+    target: formatUser(user),
+    source: "AutoMod",
+    warningId: warning.id,
     duration: muted ? formatMinutes(config.strikeMuteMinutes) : null,
     reason,
     moderator: "AutoMod",
+    moderatorLabel: "Warned by",
+    totalWarnings,
     extra: `Active AutoMod warnings: ${activeCount}/${config.strikeMuteThreshold}.`
   });
+
+  await sendWarningNoticeToChannel(guild, channelId, formatWarningNotice({
+    title: muted ? "AutoMod timeout" : "AutoMod warning",
+    user,
+    warning,
+    totalWarnings,
+    activeWarnings: activeCount,
+    threshold: config.strikeMuteThreshold,
+    action
+  }));
 
   await sendSpamLog(guild, config, {
     user,
     channelId,
     reason: `${reason}${deletedCount ? `; deleted ${deletedCount} message(s)` : ""}; warning ID ${warning.id}`,
     action,
+    moderator: "AutoMod",
     muted
   });
 }
@@ -439,16 +1274,25 @@ async function handleWarnCommand(interaction) {
   await logModerationAction(interaction, {
     action: "Warn",
     target: formatUser(user),
-    reason,
+    reason: `${reason}; warning ID ${warning.id}; total warnings ${warningCount}`,
     color: 0xffd43b
   });
   await notifyModerationTarget(interaction, user, {
     action: "Warning",
+    target: formatUser(user),
+    source: "Admin",
+    warningId: warning.id,
     reason,
-    extra: `Warning ID: ${warning.id}. Total warnings: ${warningCount}.`
+    moderatorLabel: "Warned by",
+    totalWarnings: warningCount
   });
-  await replySafely(interaction, {
-    content: `Warned ${user.tag}. They now have ${warningCount} warning${warningCount === 1 ? "" : "s"}. Warning ID: ${warning.id}`
+  await replyPublic(interaction, {
+    content: formatWarningNotice({
+      title: "Warning recorded",
+      user,
+      warning,
+      totalWarnings: warningCount
+    })
   });
 }
 
@@ -456,7 +1300,7 @@ async function handleWarningsCommand(interaction) {
   const user = interaction.options.getUser("user", true);
   const warnings = configStore.getWarnings(interaction.guild.id, user.id);
 
-  await replySafely(interaction, {
+  await replyPublic(interaction, {
     content: formatWarnings(user, warnings)
   });
 }
@@ -1393,6 +2237,13 @@ function readAntispamPatch(interaction) {
 }
 
 function requiresAdministrator(interaction) {
+  return commandRequiresAdministrator(
+    interaction.commandName,
+    readInteractionSubcommand(interaction)
+  );
+}
+
+function commandRequiresAdministrator(commandName, subcommand = null) {
   const adminCommands = new Set([
     "antispam",
     "ban",
@@ -1414,27 +2265,27 @@ function requiresAdministrator(interaction) {
     "welcometest"
   ]);
 
-  if (adminCommands.has(interaction.commandName)) {
+  if (adminCommands.has(commandName)) {
     return true;
   }
 
-  if (interaction.commandName === "guessnumber") {
-    return ["start", "stop"].includes(interaction.options.getSubcommand());
+  if (commandName === "guessnumber") {
+    return ["start", "stop"].includes(subcommand);
   }
 
-  if (interaction.commandName === "achievement") {
-    return ["grant", "revoke"].includes(interaction.options.getSubcommand());
+  if (commandName === "achievement") {
+    return ["grant", "revoke"].includes(subcommand);
   }
 
-  if (interaction.commandName === "birthday") {
-    return interaction.options.getSubcommand() === "test";
+  if (commandName === "birthday") {
+    return subcommand === "test";
   }
 
   return false;
 }
 
 async function ensureAdministrator(interaction) {
-  if (interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+  if (hasAdministrator(interaction.memberPermissions)) {
     return true;
   }
 
@@ -1442,6 +2293,19 @@ async function ensureAdministrator(interaction) {
     content: "Only server administrators can use this bot's commands."
   });
   return false;
+}
+
+function readInteractionSubcommand(interaction) {
+  try {
+    return interaction.options.getSubcommand(false);
+  } catch {
+    return null;
+  }
+}
+
+function hasAdministrator(member) {
+  const permissions = member?.permissions ?? member;
+  return Boolean(permissions?.has?.(PermissionFlagsBits.Administrator));
 }
 
 async function ensureCommandEnabled(interaction) {
@@ -1646,6 +2510,20 @@ async function deleteMessages(channel, messages) {
   return deleted.size;
 }
 
+async function sendWarningNoticeToChannel(guild, channelId, content) {
+  const channel = await fetchChannel(guild, channelId);
+
+  if (!channel?.isTextBased?.()) {
+    return false;
+  }
+
+  const sent = await channel.send({
+    content,
+    allowedMentions: { parse: [] }
+  }).catch(() => null);
+  return Boolean(sent);
+}
+
 async function logModerationAction(interaction, details) {
   const config = configStore.get(interaction.guild.id);
 
@@ -1674,7 +2552,7 @@ function formatWarnings(user, warnings) {
     const number = warnings.length - recent.length + index + 1;
     const timestamp = Math.floor(warning.createdAt / 1000);
     const source = warning.source === "automod" ? "AutoMod" : "Manual";
-    return `#${number} (${source}, ${warning.id}) <t:${timestamp}:f> by ${warning.moderatorTag}: ${truncate(warning.reason, 140)}`;
+    return `#${number} (${source}, ${warning.id}) <t:${timestamp}:f> - ${user.tag} warned by ${warning.moderatorTag}. Reason: ${truncate(warning.reason, 140)}`;
   });
 
   const hiddenCount = warnings.length - recent.length;
@@ -1682,6 +2560,37 @@ function formatWarnings(user, warnings) {
   const suffix = hiddenCount > 0 ? `\n...and ${hiddenCount} older warning${hiddenCount === 1 ? "" : "s"}.` : "";
 
   return `${prefix}\n${lines.join("\n")}${suffix}`;
+}
+
+function formatWarningNotice({
+  title,
+  user,
+  warning,
+  totalWarnings,
+  activeWarnings = null,
+  threshold = null,
+  action = null
+}) {
+  const source = warning.source === "automod" ? "AutoMod" : "Admin";
+  const lines = [
+    `**${title}**`,
+    `User: ${user.tag} (${user.id})`,
+    `Reason: ${truncate(warning.reason, 500)}`,
+    `Warned by: ${warning.moderatorTag}`,
+    `Source: ${source}`,
+    `Warning ID: ${warning.id}`,
+    `Total warnings: ${totalWarnings}`
+  ];
+
+  if (Number.isInteger(activeWarnings) && Number.isInteger(threshold)) {
+    lines.push(`Active AutoMod warnings: ${activeWarnings}/${threshold}`);
+  }
+
+  if (action) {
+    lines.push(`Action: ${action}`);
+  }
+
+  return lines.join("\n");
 }
 
 function formatUser(user) {

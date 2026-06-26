@@ -613,8 +613,15 @@ function renderGuildSettings({ guild, config, botMember, channels, roles, saved 
       <div class="panel-heading">
         <div>
           <h2>Commands</h2>
-          <p>Turn individual admin commands on or off for this server.</p>
+          <p>Set a message-command prefix and turn individual commands on or off for this server.</p>
         </div>
+      </div>
+      <div class="field-stack command-prefix-block">
+        <label>
+          <span>Message command prefix</span>
+          <input name="command_prefix" maxlength="20" value="${escapeHtml(config.commandPrefix)}">
+        </label>
+        <p class="field-note">Examples: <code>!</code> makes <code>!warn @user reason</code>; <code>mod</code> makes <code>mod warn @user reason</code>. Slash commands still work.</p>
       </div>
       <div class="command-grid">
         ${COMMAND_TOGGLE_KEYS.map((command) => renderToggle(`command_${command}`, config.commandToggles[command], `/${command}`)).join("")}
@@ -658,19 +665,31 @@ function renderThemeSelect(name, label, selectedTheme) {
 }
 
 function renderChannelSelect(name, label, channels, selectedId) {
+  const hasSelectedChannel = selectedId && channels.some((channel) => channel.id === selectedId);
+  const savedOption = selectedId && !hasSelectedChannel
+    ? renderOption(selectedId, `Saved channel (${selectedId})`, selectedId)
+    : "";
+
   return `<label>
     <span>${escapeHtml(label)}</span>
     <select name="${name}">
       <option value="">Not set</option>
+      ${savedOption}
       ${channels.map((channel) => renderOption(channel.id, `#${channel.name}`, selectedId)).join("")}
     </select>
   </label>`;
 }
 
 function renderMultiSelect(name, label, items, selectedIds) {
+  const selectedSet = new Set(Array.isArray(selectedIds) ? selectedIds : []);
+  const missingItems = [...selectedSet].filter(
+    (selectedId) => !items.some((item) => item.id === selectedId)
+  );
+
   return `<label>
     <span>${escapeHtml(label)}</span>
     <select name="${name}" multiple size="8">
+      ${missingItems.map((selectedId) => renderOption(selectedId, `Saved item (${selectedId})`, selectedIds)).join("")}
       ${items.map((item) => renderOption(item.id, item.name, selectedIds)).join("")}
     </select>
   </label>`;
@@ -770,6 +789,7 @@ function readSettingsPatch(body) {
     strikeMuteThreshold: body.strike_mute_threshold,
     badWords: body.bad_words,
     scamDomains: body.scam_domains,
+    commandPrefix: body.command_prefix,
     commandToggles,
     dmModerationEnabled: body.dm_moderation_enabled === "on",
     logChannelId: body.log_channel_id || null,

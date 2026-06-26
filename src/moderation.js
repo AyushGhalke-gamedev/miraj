@@ -172,6 +172,7 @@ export async function sendSpamLog(guild, config, details) {
       { name: "User", value: `${details.user.tag} (${details.user.id})`, inline: false },
       { name: "Channel", value: `<#${details.channelId}>`, inline: true },
       { name: "Action", value: details.action, inline: true },
+      { name: "Warned by", value: details.moderator ?? "AutoMod", inline: true },
       { name: "Reason", value: details.reason.slice(0, 1024), inline: false }
     );
 
@@ -231,6 +232,18 @@ export function buildModerationDmContent(guild, details) {
     `Action: ${details.action}`
   ];
 
+  if (details.target) {
+    lines.push(`User: ${details.target}`);
+  }
+
+  if (details.source) {
+    lines.push(`Source: ${details.source}`);
+  }
+
+  if (details.warningId) {
+    lines.push(`Warning ID: ${details.warningId}`);
+  }
+
   if (details.duration) {
     lines.push(`Duration: ${details.duration}`);
   }
@@ -240,7 +253,11 @@ export function buildModerationDmContent(guild, details) {
   }
 
   if (details.moderator) {
-    lines.push(`Moderator: ${details.moderator}`);
+    lines.push(`${details.moderatorLabel ?? "Moderator"}: ${details.moderator}`);
+  }
+
+  if (Number.isInteger(details.totalWarnings)) {
+    lines.push(`Total warnings: ${details.totalWarnings}`);
   }
 
   if (details.extra) {

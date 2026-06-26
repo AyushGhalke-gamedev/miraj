@@ -17,8 +17,10 @@ A Discord bot that watches server messages for spam and can automatically timeou
 - Uses an AutoMod warning ladder: first warning, second warning, third active warning mutes for 6 hours by default.
 - Automatically resets active AutoMod strikes after 24 hours by default.
 - DMs affected users about moderation actions when possible.
+- Posts detailed warning notices with the warned user, reason, source, and moderator.
 - Optional deletion of recent spam messages.
 - Per-server configuration saved in `data/guilds.json`.
+- Supports dashboard-configured message commands such as `!warn @user reason` in addition to slash commands.
 - Administrator-only slash commands:
   - `/antispam status`
   - `/antispam set`
@@ -164,7 +166,7 @@ The dashboard lets admins configure:
 - Invite blocking, scam-domain blocking, bad-word blocking, and custom word/domain lists.
 - Log channel, ignored channels, ignored roles, and user DM notices for moderation actions.
 - Guess-number, birthday, achievement, and themed welcome-card settings.
-- Per-command on/off toggles.
+- Message command prefix and per-command on/off toggles.
 
 Moderation DMs are best-effort. If a user has DMs closed or blocks the bot, the moderation action still completes.
 
@@ -177,6 +179,8 @@ Set `DASHBOARD_PASSWORD` before exposing the dashboard beyond your own machine. 
 ## Command Access
 
 Moderation and admin-only setup commands are registered with Discord's `Administrator` default member permission. Public fun commands are open to members, but admin subcommands such as `/guessnumber start`, `/guessnumber stop`, `/achievement grant`, `/achievement revoke`, and `/birthday test` still check `Administrator` at runtime.
+
+Slash commands always use Discord's `/` UI, but the dashboard can add a custom text prefix for normal chat messages. For example, set the prefix to `!` and use `!warn @user reason`, or set it to `mod` and use `mod warnings @user`.
 
 After changing commands, rerun:
 
