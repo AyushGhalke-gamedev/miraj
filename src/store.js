@@ -166,6 +166,65 @@ export class ConfigStore {
     return clone(game);
   }
 
+  async addGuessPlayer(guildId, player) {
+    const game = this.guessGames.get(guildId);
+
+    if (!game) {
+      return null;
+    }
+
+    const nextPlayer = normalizeGuessPlayer(player);
+
+    if (!game.players.some((item) => item.userId === nextPlayer.userId)) {
+      game.players.push(nextPlayer);
+    }
+
+    game.currentTurnIndex = clampTurnIndex(game.currentTurnIndex, game.players.length);
+    await this.save();
+    return clone(game);
+  }
+
+  async removeGuessPlayer(guildId, userId) {
+    const game = this.guessGames.get(guildId);
+
+    if (!game) {
+      return null;
+    }
+
+    const previousIndex = game.players.findIndex((player) => player.userId === userId);
+
+    if (previousIndex === -1) {
+      return clone(game);
+    }
+
+    game.players.splice(previousIndex, 1);
+
+    if (previousIndex < game.currentTurnIndex) {
+      game.currentTurnIndex -= 1;
+    }
+
+    game.currentTurnIndex = clampTurnIndex(game.currentTurnIndex, game.players.length);
+    await this.save();
+    return clone(game);
+  }
+
+  async advanceGuessTurn(guildId) {
+    const game = this.guessGames.get(guildId);
+
+    if (!game) {
+      return null;
+    }
+
+    if (game.players.length > 0) {
+      game.currentTurnIndex = (game.currentTurnIndex + 1) % game.players.length;
+    } else {
+      game.currentTurnIndex = 0;
+    }
+
+    await this.save();
+    return clone(game);
+  }
+
   async stopGuessGame(guildId) {
     const game = this.guessGames.get(guildId);
     this.guessGames.delete(guildId);
@@ -378,6 +437,8 @@ function normalizeGuessGame(game) {
     return null;
   }
 
+  const players = normalizeGuessPlayers(game.players);
+
   return {
     id: String(game.id ?? `${Date.now()}`),
     min,
@@ -387,6 +448,8 @@ function normalizeGuessGame(game) {
     channelId: String(game.channelId ?? ""),
     startedById: String(game.startedById ?? ""),
     startedAt: normalizeTimestamp(game.startedAt),
+    players,
+    currentTurnIndex: clampTurnIndex(game.currentTurnIndex, players.length),
     guesses: Array.isArray(game.guesses) ? game.guesses.map(normalizeGuess) : []
   };
 }
@@ -398,6 +461,45 @@ function normalizeGuess(guess) {
     number: Math.round(Number(guess.number)),
     createdAt: normalizeTimestamp(guess.createdAt)
   };
+}
+
+function normalizeGuessPlayers(players) {
+  if (!Array.isArray(players)) {
+    return [];
+  }
+
+  const seen = new Set();
+  const normalized = [];
+
+  for (const player of players) {
+    const nextPlayer = normalizeGuessPlayer(player);
+
+    if (!nextPlayer.userId || seen.has(nextPlayer.userId)) {
+      continue;
+    }
+
+    seen.add(nextPlayer.userId);
+    normalized.push(nextPlayer);
+  }
+
+  return normalized;
+}
+
+function normalizeGuessPlayer(player) {
+  return {
+    userId: String(player.userId ?? ""),
+    userTag: String(player.userTag ?? "Unknown user").slice(0, 80),
+    joinedAt: normalizeTimestamp(player.joinedAt)
+  };
+}
+
+function clampTurnIndex(value, playerCount) {
+  if (playerCount <= 0) {
+    return 0;
+  }
+
+  const index = Math.round(Number(value));
+  return Number.isFinite(index) ? Math.min(playerCount - 1, Math.max(0, index)) : 0;
 }
 
 function normalizeGuildBirthdays(value) {

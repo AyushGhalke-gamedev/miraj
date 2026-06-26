@@ -496,7 +496,7 @@ const guessNumberCommand = new SlashCommandBuilder()
   .addSubcommand((subcommand) =>
     subcommand
       .setName("guess")
-      .setDescription("Guess the active game's secret number.")
+      .setDescription("Guess the active game's secret number. You can also type the number in chat.")
       .addIntegerOption((option) =>
         option
           .setName("number")
@@ -505,6 +505,16 @@ const guessNumberCommand = new SlashCommandBuilder()
           .setMinValue(NUMERIC_LIMITS.guessNumberMin.min)
           .setMaxValue(NUMERIC_LIMITS.guessNumberMax.max)
       )
+  )
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("join")
+      .setDescription("Join the active guess-the-number turn queue.")
+  )
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("leave")
+      .setDescription("Leave the active guess-the-number turn queue.")
   )
   .addSubcommand((subcommand) =>
     subcommand

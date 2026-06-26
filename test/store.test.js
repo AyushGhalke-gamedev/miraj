@@ -92,7 +92,19 @@ test("fun module state persists across reloads", async () => {
     channelId: "channel-1",
     startedById: "admin-1",
     startedAt: 1000,
+    players: [],
+    currentTurnIndex: 0,
     guesses: []
+  });
+  await store.addGuessPlayer("guild-1", {
+    userId: "user-1",
+    userTag: "Player#0001",
+    joinedAt: 1500
+  });
+  await store.addGuessPlayer("guild-1", {
+    userId: "user-2",
+    userTag: "Player#0002",
+    joinedAt: 1600
   });
   await store.addGuess("guild-1", {
     userId: "user-1",
@@ -100,6 +112,7 @@ test("fun module state persists across reloads", async () => {
     number: 4,
     createdAt: 2000
   });
+  await store.advanceGuessTurn("guild-1");
   await store.setBirthday("guild-1", "user-1", {
     month: 6,
     day: 26,
@@ -120,6 +133,11 @@ test("fun module state persists across reloads", async () => {
   await reloaded.load();
 
   assert.equal(reloaded.getGuessGame("guild-1").guesses[0].number, 4);
+  assert.deepEqual(
+    reloaded.getGuessGame("guild-1").players.map((player) => player.userId),
+    ["user-1", "user-2"]
+  );
+  assert.equal(reloaded.getGuessGame("guild-1").currentTurnIndex, 1);
   assert.deepEqual(reloaded.getBirthday("guild-1", "user-1"), {
     userId: "user-1",
     month: 6,

@@ -186,6 +186,10 @@ async function handleMessage(message) {
 
   const config = configStore.get(message.guild.id);
 
+  if (await handleGuessNumberMessage(message, config)) {
+    return;
+  }
+
   if (shouldSkipMessage(message, config)) {
     return;
   }
@@ -788,6 +792,16 @@ async function handleGuessNumberCommand(interaction) {
     return;
   }
 
+  if (subcommand === "join") {
+    await handleGuessNumberJoin(interaction);
+    return;
+  }
+
+  if (subcommand === "leave") {
+    await handleGuessNumberLeave(interaction);
+    return;
+  }
+
   if (subcommand === "status") {
     await handleGuessNumberStatus(interaction);
     return;
@@ -847,8 +861,8 @@ async function handleGuessNumberStart(interaction) {
     max: game.max,
     maxAttempts: game.maxAttempts,
     channelId: channel.id,
-    footer: `${game.maxAttempts} total guesses. Closest minds, step forward.`,
-    content: `Guess-the-number has started in <#${channel.id}>. Range: ${game.min}-${game.max}. Use \`/guessnumber guess\`.`
+    footer: `${game.maxAttempts} total guesses. Type join or reply with a number.`,
+    content: `Guess-the-number has started in <#${channel.id}>. Range: ${game.min}-${game.max}. Type \`join\`, then type a number when it is your turn.`
   });
 
   await channel.send(payload);
@@ -859,92 +873,307 @@ async function handleGuessNumberStart(interaction) {
 
 async function handleGuessNumberGuess(interaction) {
   const config = configStore.get(interaction.guild.id);
-
-  if (!config.guessNumberEnabled) {
-    await replySafely(interaction, { content: "Guess-the-number is disabled in the dashboard." });
-    return;
-  }
-
-  const game = configStore.getGuessGame(interaction.guild.id);
-
-  if (!game) {
-    await replySafely(interaction, { content: "No guess-the-number game is running right now." });
-    return;
-  }
-
-  if (interaction.channelId !== game.channelId) {
-    await replySafely(interaction, { content: `The active game is in <#${game.channelId}>.` });
-    return;
-  }
-
   const number = interaction.options.getInteger("number", true);
 
+  await handleGuessNumberGuessInput({
+    guild: interaction.guild,
+    channelId: interaction.channelId,
+    user: interaction.user,
+    number,
+    config,
+    respond: (payload) => replyPublic(interaction, payload)
+  });
+}
+
+async function handleGuessNumberJoin(interaction) {
+  const config = configStore.get(interaction.guild.id);
+
+  await handleGuessNumberJoinInput({
+    guild: interaction.guild,
+    channelId: interaction.channelId,
+    user: interaction.user,
+    config,
+    respond: (payload) => replyPublic(interaction, payload)
+  });
+}
+
+async function handleGuessNumberLeave(interaction) {
+  const config = configStore.get(interaction.guild.id);
+
+  await handleGuessNumberLeaveInput({
+    guild: interaction.guild,
+    channelId: interaction.channelId,
+    user: interaction.user,
+    config,
+    respond: (payload) => replyPublic(interaction, payload)
+  });
+}
+
+async function handleGuessNumberMessage(message, config) {
+  if (!config.guessNumberEnabled || message.author?.bot || message.system || message.webhookId) {
+    return false;
+  }
+
+  const game = configStore.getGuessGame(message.guild.id);
+
+  if (!game || message.channelId !== game.channelId) {
+    return false;
+  }
+
+  const input = parseGuessNumberMessage(message.content);
+
+  if (!input) {
+    return false;
+  }
+
+  const respond = (payload) => message.reply({
+    ...payload,
+    allowedMentions: payload.allowedMentions ?? { parse: [] }
+  });
+
+  if (input.type === "join") {
+    await handleGuessNumberJoinInput({
+      guild: message.guild,
+      channelId: message.channelId,
+      user: message.author,
+      config,
+      respond
+    });
+    return true;
+  }
+
+  if (input.type === "leave") {
+    await handleGuessNumberLeaveInput({
+      guild: message.guild,
+      channelId: message.channelId,
+      user: message.author,
+      config,
+      respond
+    });
+    return true;
+  }
+
+  await handleGuessNumberGuessInput({
+    guild: message.guild,
+    channelId: message.channelId,
+    user: message.author,
+    number: input.number,
+    config,
+    respond
+  });
+  return true;
+}
+
+async function handleGuessNumberJoinInput({ guild, channelId, user, config, respond }) {
+  const game = await getPlayableGuessGame({ guild, channelId, config, respond });
+
+  if (!game) {
+    return;
+  }
+
+  const alreadyJoined = hasGuessPlayer(game, user.id);
+  const updatedGame = await configStore.addGuessPlayer(guild.id, {
+    userId: user.id,
+    userTag: user.tag,
+    joinedAt: Date.now()
+  });
+  const currentPlayer = getCurrentGuessPlayer(updatedGame);
+  const suffix = currentPlayer?.userId === user.id
+    ? "It is your turn. Type a number."
+    : `Current turn: <@${currentPlayer.userId}>.`;
+
+  await respond({
+    content: alreadyJoined
+      ? `${user} is already in the queue. ${suffix}`
+      : `${user} joined the guess queue. ${suffix}`,
+    allowedMentions: { parse: [] }
+  });
+}
+
+async function handleGuessNumberLeaveInput({ guild, channelId, user, config, respond }) {
+  const game = await getPlayableGuessGame({ guild, channelId, config, respond });
+
+  if (!game) {
+    return;
+  }
+
+  if (!hasGuessPlayer(game, user.id)) {
+    await respond({
+      content: `${user} is not in the current guess queue.`,
+      allowedMentions: { parse: [] }
+    });
+    return;
+  }
+
+  const updatedGame = await configStore.removeGuessPlayer(guild.id, user.id);
+  const currentPlayer = getCurrentGuessPlayer(updatedGame);
+
+  await respond({
+    content: currentPlayer
+      ? `${user} left the queue. Current turn: <@${currentPlayer.userId}>.`
+      : `${user} left the queue. No players are queued now.`,
+    allowedMentions: { parse: [] }
+  });
+}
+
+async function handleGuessNumberGuessInput({ guild, channelId, user, number, config, respond }) {
+  let game = await getPlayableGuessGame({ guild, channelId, config, respond });
+
+  if (!game) {
+    return;
+  }
+
   if (number < game.min || number > game.max) {
-    await replySafely(interaction, {
+    await respond({
       content: `Your guess must be between ${game.min} and ${game.max}.`
     });
     return;
   }
 
-  const updatedGame = await configStore.addGuess(interaction.guild.id, {
-    userId: interaction.user.id,
-    userTag: interaction.user.tag,
+  if (game.players.length === 0) {
+    game = await configStore.addGuessPlayer(guild.id, {
+      userId: user.id,
+      userTag: user.tag,
+      joinedAt: Date.now()
+    });
+  } else if (!hasGuessPlayer(game, user.id)) {
+    const updatedGame = await configStore.addGuessPlayer(guild.id, {
+      userId: user.id,
+      userTag: user.tag,
+      joinedAt: Date.now()
+    });
+    const currentPlayer = getCurrentGuessPlayer(updatedGame);
+
+    await respond({
+      content: `${user} joined the queue. Wait for your turn${currentPlayer ? ` after <@${currentPlayer.userId}>` : ""}.`,
+      allowedMentions: { parse: [] }
+    });
+    return;
+  }
+
+  const currentPlayer = getCurrentGuessPlayer(game);
+
+  if (currentPlayer && currentPlayer.userId !== user.id) {
+    await respond({
+      content: `Wait your turn, ${user}. Current turn: <@${currentPlayer.userId}>.`,
+      allowedMentions: { parse: [] }
+    });
+    return;
+  }
+
+  const updatedGame = await configStore.addGuess(guild.id, {
+    userId: user.id,
+    userTag: user.tag,
     number,
     createdAt: Date.now()
   });
   const attempts = updatedGame.guesses.length;
 
   if (number === game.secretNumber) {
-    await configStore.stopGuessGame(interaction.guild.id);
-    await maybeGrantAchievement(interaction.guild, interaction.user, "first-win", interaction.client.user);
-    const content = renderGuessTemplate(config.guessNumberWinMessage, interaction.guild, {
-      userId: interaction.user.id,
-      username: interaction.user.username,
+    await configStore.stopGuessGame(guild.id);
+    await maybeGrantAchievement(guild, user, "first-win", client.user);
+    const content = renderGuessTemplate(config.guessNumberWinMessage, guild, {
+      userId: user.id,
+      username: user.username,
       number,
       attempts,
       min: game.min,
       max: game.max,
-      channelId: interaction.channelId
+      channelId
     });
-    const payload = await buildGuessNumberPayload(interaction.guild, config, {
-      userId: interaction.user.id,
-      username: interaction.user.username,
+    const payload = await buildGuessNumberPayload(guild, config, {
+      userId: user.id,
+      username: user.username,
       number,
       attempts,
       min: game.min,
       max: game.max,
-      channelId: interaction.channelId,
+      channelId,
       footer: "Winner found. New game?",
       content
     });
 
-    await replyPublic(interaction, payload);
+    await respond(payload);
     return;
   }
 
   if (attempts >= game.maxAttempts) {
-    await configStore.stopGuessGame(interaction.guild.id);
-    const payload = await buildGuessNumberPayload(interaction.guild, config, {
+    await configStore.stopGuessGame(guild.id);
+    const payload = await buildGuessNumberPayload(guild, config, {
       number: game.secretNumber,
       attempts,
       min: game.min,
       max: game.max,
-      channelId: interaction.channelId,
+      channelId,
       footer: "The game ended with no winner.",
       content: `No more guesses left. The number was **${game.secretNumber}**.`
     });
 
-    await replyPublic(interaction, payload);
+    await respond(payload);
     return;
   }
 
+  const advancedGame = await configStore.advanceGuessTurn(guild.id);
+  const nextPlayer = getCurrentGuessPlayer(advancedGame);
   const hint = number < game.secretNumber ? "higher" : "lower";
   const left = game.maxAttempts - attempts;
+  const nextTurn = nextPlayer ? ` Next turn: <@${nextPlayer.userId}>.` : "";
 
-  await replyPublic(interaction, {
-    content: `${interaction.user} guessed **${number}**. Try **${hint}**. ${left} guess${left === 1 ? "" : "es"} left.`,
+  await respond({
+    content: `${user} guessed **${number}**. Try **${hint}**. ${left} guess${left === 1 ? "" : "es"} left.${nextTurn}`,
     allowedMentions: { parse: [] }
   });
+}
+
+async function getPlayableGuessGame({ guild, channelId, config, respond }) {
+  if (!config.guessNumberEnabled) {
+    await respond({ content: "Guess-the-number is disabled in the dashboard." });
+    return null;
+  }
+
+  const game = configStore.getGuessGame(guild.id);
+
+  if (!game) {
+    await respond({ content: "No guess-the-number game is running right now." });
+    return null;
+  }
+
+  if (channelId !== game.channelId) {
+    await respond({ content: `The active game is in <#${game.channelId}>.` });
+    return null;
+  }
+
+  return game;
+}
+
+function parseGuessNumberMessage(content) {
+  const trimmed = String(content ?? "").trim().toLowerCase();
+
+  if (["join", "join game", "join guess", "join guessing"].includes(trimmed)) {
+    return { type: "join" };
+  }
+
+  if (["leave", "leave game", "quit", "quit game"].includes(trimmed)) {
+    return { type: "leave" };
+  }
+
+  if (/^-?\d+$/.test(trimmed)) {
+    return { type: "guess", number: Number.parseInt(trimmed, 10) };
+  }
+
+  return null;
+}
+
+function hasGuessPlayer(game, userId) {
+  return game.players.some((player) => player.userId === userId);
+}
+
+function getCurrentGuessPlayer(game) {
+  if (!game?.players?.length) {
+    return null;
+  }
+
+  return game.players[game.currentTurnIndex] ?? game.players[0];
 }
 
 async function handleGuessNumberStatus(interaction) {
@@ -956,8 +1185,13 @@ async function handleGuessNumberStatus(interaction) {
   }
 
   const guessesLeft = Math.max(0, game.maxAttempts - game.guesses.length);
+  const currentPlayer = getCurrentGuessPlayer(game);
+  const playerList = game.players.length
+    ? game.players.map((player, index) => `${index + 1}. <@${player.userId}>`).join("\n")
+    : "No players yet. Type `join` or send a number in the game channel.";
+
   await replySafely(interaction, {
-    content: `Active game in <#${game.channelId}>: ${game.min}-${game.max}, ${game.guesses.length}/${game.maxAttempts} guesses used, ${guessesLeft} left.`
+    content: `Active game in <#${game.channelId}>: ${game.min}-${game.max}, ${game.guesses.length}/${game.maxAttempts} guesses used, ${guessesLeft} left.\nCurrent turn: ${currentPlayer ? `<@${currentPlayer.userId}>` : "waiting for players"}\nPlayers:\n${playerList}`
   });
 }
 

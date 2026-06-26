@@ -45,6 +45,8 @@ A Discord bot that watches server messages for spam and can automatically timeou
   - `/welcometest`
 - Member-friendly slash commands:
   - `/guessnumber guess`
+  - `/guessnumber join`
+  - `/guessnumber leave`
   - `/guessnumber status`
   - `/birthday set`
   - `/birthday clear`
@@ -192,10 +194,21 @@ Guess number:
 
 ```bash
 /guessnumber start channel:#games min:1 max:100 attempts:12
+/guessnumber join
 /guessnumber guess number:42
 /guessnumber status
 /guessnumber stop
 ```
+
+Members can also play without slash commands in the active game channel:
+
+```text
+join
+42
+leave
+```
+
+The bot keeps a turn queue. If someone guesses out of turn, it tells them whose turn is active.
 
 Birthdays:
 

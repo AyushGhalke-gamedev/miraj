@@ -7,7 +7,7 @@ export async function createGuessNumberBanner(guild, config, details = {}) {
   return createThemedBanner({
     title: renderGuessTemplate(config.guessNumberBannerTitle, guild, details),
     subtitle: renderGuessTemplate(config.guessNumberBannerSubtitle, guild, details),
-    footer: details.footer ?? "Use /guessnumber guess to play.",
+    footer: details.footer ?? "Type join, then type a number on your turn.",
     badge: "GAME",
     theme: config.guessNumberBannerTheme,
     backgroundUrl: config.guessNumberBannerBackgroundUrl,
