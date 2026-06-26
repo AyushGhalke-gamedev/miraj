@@ -5,6 +5,9 @@ export const COMMAND_TOGGLE_KEYS = Object.freeze([
   "ban",
   "clear",
   "clearwarnings",
+  "achievement",
+  "birthday",
+  "guessnumber",
   "kick",
   "lockdown",
   "mute",
@@ -24,6 +27,38 @@ export const COMMAND_TOGGLE_KEYS = Object.freeze([
 export const DEFAULT_COMMAND_TOGGLES = Object.freeze(
   Object.fromEntries(COMMAND_TOGGLE_KEYS.map((key) => [key, true]))
 );
+
+export const BANNER_THEMES = Object.freeze([
+  "classic",
+  "neon",
+  "pastel",
+  "arcade",
+  "midnight"
+]);
+
+export const DEFAULT_ACHIEVEMENTS = Object.freeze([
+  {
+    key: "first-win",
+    title: "First Win",
+    description: "Won a server mini game.",
+    badge: "WIN",
+    enabled: true
+  },
+  {
+    key: "good-vibes",
+    title: "Good Vibes",
+    description: "Recognized for keeping the server wholesome.",
+    badge: "VIBE",
+    enabled: true
+  },
+  {
+    key: "helper",
+    title: "Helper",
+    description: "Helped another member or the moderation team.",
+    badge: "HELP",
+    enabled: true
+  }
+]);
 
 export const DEFAULT_CONFIG = Object.freeze({
   enabled: true,
@@ -76,10 +111,42 @@ export const DEFAULT_CONFIG = Object.freeze({
   welcomeBannerTitle: "Welcome, {username}",
   welcomeBannerSubtitle: "You are member #{memberCount} in {server}.",
   welcomeBannerInviteLine: "Invited by {inviterName} - {inviterInvites} invites",
+  welcomeBannerTheme: "classic",
   welcomeBannerBackgroundUrl: null,
   welcomeBannerBackgroundColor: "#20232a",
   welcomeBannerAccentColor: "#5b8def",
   welcomeBannerTextColor: "#ffffff",
+  guessNumberEnabled: true,
+  guessNumberChannelId: null,
+  guessNumberMin: 1,
+  guessNumberMax: 100,
+  guessNumberMaxAttempts: 12,
+  guessNumberBannerEnabled: true,
+  guessNumberBannerTheme: "arcade",
+  guessNumberBannerTitle: "Guess the Number",
+  guessNumberBannerSubtitle: "Pick a number from {min} to {max}.",
+  guessNumberWinMessage: "{mention} guessed {number} in {attempts} tries!",
+  guessNumberBannerBackgroundUrl: null,
+  guessNumberBannerBackgroundColor: "#111827",
+  guessNumberBannerAccentColor: "#f59e0b",
+  guessNumberBannerTextColor: "#ffffff",
+  birthdayEnabled: false,
+  birthdayChannelId: null,
+  birthdayMessage: "Happy birthday {mention}! Wishing you an amazing day in {server}.",
+  birthdayBannerEnabled: true,
+  birthdayBannerTheme: "pastel",
+  birthdayBannerTitle: "Happy Birthday, {displayName}!",
+  birthdayBannerSubtitle: "From everyone in {server}",
+  birthdayBannerBackgroundUrl: null,
+  birthdayBannerBackgroundColor: "#7c3aed",
+  birthdayBannerAccentColor: "#f9a8d4",
+  birthdayBannerTextColor: "#ffffff",
+  birthdayCheckHour: 9,
+  birthdayTimezoneOffsetMinutes: 0,
+  achievementsEnabled: true,
+  achievementAnnounceEnabled: true,
+  achievementAnnounceChannelId: null,
+  achievements: DEFAULT_ACHIEVEMENTS,
   ignoredRoleIds: [],
   ignoredChannelIds: []
 });
@@ -97,7 +164,12 @@ export const NUMERIC_LIMITS = Object.freeze({
   ghostPingWindowSeconds: { min: 10, max: 3600 },
   strikeMuteMinutes: { min: 1, max: MAX_TIMEOUT_MINUTES },
   strikeResetHours: { min: 1, max: 168 },
-  strikeMuteThreshold: { min: 1, max: 10 }
+  strikeMuteThreshold: { min: 1, max: 10 },
+  guessNumberMin: { min: 1, max: 999999 },
+  guessNumberMax: { min: 2, max: 1000000 },
+  guessNumberMaxAttempts: { min: 1, max: 1000 },
+  birthdayCheckHour: { min: 0, max: 23 },
+  birthdayTimezoneOffsetMinutes: { min: -720, max: 840 }
 });
 
 export function normalizeGuildConfig(config = {}) {
@@ -192,6 +264,10 @@ export function normalizeGuildConfig(config = {}) {
       DEFAULT_CONFIG.welcomeBannerInviteLine,
       180
     ),
+    welcomeBannerTheme: readTheme(
+      merged.welcomeBannerTheme,
+      DEFAULT_CONFIG.welcomeBannerTheme
+    ),
     welcomeBannerBackgroundUrl: readNullableUrl(merged.welcomeBannerBackgroundUrl),
     welcomeBannerBackgroundColor: readColor(
       merged.welcomeBannerBackgroundColor,
@@ -205,6 +281,105 @@ export function normalizeGuildConfig(config = {}) {
       merged.welcomeBannerTextColor,
       DEFAULT_CONFIG.welcomeBannerTextColor
     ),
+    guessNumberEnabled: readBoolean(
+      merged.guessNumberEnabled,
+      DEFAULT_CONFIG.guessNumberEnabled
+    ),
+    guessNumberChannelId: readNullableId(merged.guessNumberChannelId),
+    guessNumberMin: readInteger("guessNumberMin", merged.guessNumberMin),
+    guessNumberMax: Math.max(
+      readInteger("guessNumberMin", merged.guessNumberMin) + 1,
+      readInteger("guessNumberMax", merged.guessNumberMax)
+    ),
+    guessNumberMaxAttempts: readInteger(
+      "guessNumberMaxAttempts",
+      merged.guessNumberMaxAttempts
+    ),
+    guessNumberBannerEnabled: readBoolean(
+      merged.guessNumberBannerEnabled,
+      DEFAULT_CONFIG.guessNumberBannerEnabled
+    ),
+    guessNumberBannerTheme: readTheme(
+      merged.guessNumberBannerTheme,
+      DEFAULT_CONFIG.guessNumberBannerTheme
+    ),
+    guessNumberBannerTitle: readText(
+      merged.guessNumberBannerTitle,
+      DEFAULT_CONFIG.guessNumberBannerTitle,
+      120
+    ),
+    guessNumberBannerSubtitle: readText(
+      merged.guessNumberBannerSubtitle,
+      DEFAULT_CONFIG.guessNumberBannerSubtitle,
+      180
+    ),
+    guessNumberWinMessage: readText(
+      merged.guessNumberWinMessage,
+      DEFAULT_CONFIG.guessNumberWinMessage,
+      300
+    ),
+    guessNumberBannerBackgroundUrl: readNullableUrl(merged.guessNumberBannerBackgroundUrl),
+    guessNumberBannerBackgroundColor: readColor(
+      merged.guessNumberBannerBackgroundColor,
+      DEFAULT_CONFIG.guessNumberBannerBackgroundColor
+    ),
+    guessNumberBannerAccentColor: readColor(
+      merged.guessNumberBannerAccentColor,
+      DEFAULT_CONFIG.guessNumberBannerAccentColor
+    ),
+    guessNumberBannerTextColor: readColor(
+      merged.guessNumberBannerTextColor,
+      DEFAULT_CONFIG.guessNumberBannerTextColor
+    ),
+    birthdayEnabled: readBoolean(merged.birthdayEnabled, DEFAULT_CONFIG.birthdayEnabled),
+    birthdayChannelId: readNullableId(merged.birthdayChannelId),
+    birthdayMessage: readText(merged.birthdayMessage, DEFAULT_CONFIG.birthdayMessage, 1000),
+    birthdayBannerEnabled: readBoolean(
+      merged.birthdayBannerEnabled,
+      DEFAULT_CONFIG.birthdayBannerEnabled
+    ),
+    birthdayBannerTheme: readTheme(
+      merged.birthdayBannerTheme,
+      DEFAULT_CONFIG.birthdayBannerTheme
+    ),
+    birthdayBannerTitle: readText(
+      merged.birthdayBannerTitle,
+      DEFAULT_CONFIG.birthdayBannerTitle,
+      120
+    ),
+    birthdayBannerSubtitle: readText(
+      merged.birthdayBannerSubtitle,
+      DEFAULT_CONFIG.birthdayBannerSubtitle,
+      180
+    ),
+    birthdayBannerBackgroundUrl: readNullableUrl(merged.birthdayBannerBackgroundUrl),
+    birthdayBannerBackgroundColor: readColor(
+      merged.birthdayBannerBackgroundColor,
+      DEFAULT_CONFIG.birthdayBannerBackgroundColor
+    ),
+    birthdayBannerAccentColor: readColor(
+      merged.birthdayBannerAccentColor,
+      DEFAULT_CONFIG.birthdayBannerAccentColor
+    ),
+    birthdayBannerTextColor: readColor(
+      merged.birthdayBannerTextColor,
+      DEFAULT_CONFIG.birthdayBannerTextColor
+    ),
+    birthdayCheckHour: readInteger("birthdayCheckHour", merged.birthdayCheckHour),
+    birthdayTimezoneOffsetMinutes: readInteger(
+      "birthdayTimezoneOffsetMinutes",
+      merged.birthdayTimezoneOffsetMinutes
+    ),
+    achievementsEnabled: readBoolean(
+      merged.achievementsEnabled,
+      DEFAULT_CONFIG.achievementsEnabled
+    ),
+    achievementAnnounceEnabled: readBoolean(
+      merged.achievementAnnounceEnabled,
+      DEFAULT_CONFIG.achievementAnnounceEnabled
+    ),
+    achievementAnnounceChannelId: readNullableId(merged.achievementAnnounceChannelId),
+    achievements: readAchievements(merged.achievements),
     ignoredRoleIds: readUniqueIds(merged.ignoredRoleIds),
     ignoredChannelIds: readUniqueIds(merged.ignoredChannelIds)
   };
@@ -298,6 +473,72 @@ function readCommandToggles(value) {
       typeof source[key] === "boolean" ? source[key] : DEFAULT_COMMAND_TOGGLES[key]
     ])
   );
+}
+
+function readTheme(value, fallback) {
+  return BANNER_THEMES.includes(value) ? value : fallback;
+}
+
+function readAchievements(value) {
+  const source = typeof value === "string"
+    ? value.split(/\r?\n/).map(parseAchievementLine)
+    : Array.isArray(value)
+      ? value
+      : DEFAULT_ACHIEVEMENTS;
+  const seen = new Set();
+  const achievements = [];
+
+  for (const item of source) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const key = readAchievementKey(item.key);
+
+    if (!key || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    achievements.push({
+      key,
+      title: readText(item.title, key, 80),
+      description: readText(item.description, "Custom server achievement.", 180),
+      badge: readText(item.badge, key.slice(0, 8).toUpperCase(), 12),
+      enabled: readBoolean(item.enabled, true)
+    });
+  }
+
+  return achievements.length ? achievements.slice(0, 30) : [...DEFAULT_ACHIEVEMENTS];
+}
+
+function parseAchievementLine(line) {
+  const trimmed = String(line).trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  const [key, title, description, badge, enabled = "true"] = trimmed
+    .split("|")
+    .map((part) => part.trim());
+
+  return {
+    key,
+    title,
+    description,
+    badge,
+    enabled: !["false", "off", "0", "disabled"].includes(enabled.toLowerCase())
+  };
+}
+
+function readAchievementKey(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const key = value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 32);
+  return key.replace(/^-+|-+$/g, "");
 }
 
 function readNullableUrl(value) {

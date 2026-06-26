@@ -6,9 +6,13 @@ A Discord bot that watches server messages for spam and can automatically timeou
 
 - Sends wholesome welcome messages when new members join.
 - Generates custom welcome banner images with the new member's profile picture.
+- Supports themed welcome cards: classic, neon, pastel, arcade, and midnight.
 - Tracks which invite was used and can show the inviter in welcome messages and banners.
 - Includes a password-protected web dashboard for server settings.
 - Lets admins customize the bot's per-server profile from the dashboard.
+- Adds a guess-the-number mini game with configurable range, attempts, and custom banners.
+- Adds custom achievements that admins can grant and members can view.
+- Sends birthday messages with custom birthday banners.
 - Detects flood spam, repeated messages, invite links, scam links, bad words, mention spam, emoji spam, zalgo text, ghost pings, and excessive caps.
 - Uses an AutoMod warning ladder: first warning, second warning, third active warning mutes for 6 hours by default.
 - Automatically resets active AutoMod strikes after 24 hours by default.
@@ -26,6 +30,8 @@ A Discord bot that watches server messages for spam and can automatically timeou
   - `/warn`
   - `/warnings`
   - `/clearwarnings`
+  - `/achievement grant`
+  - `/achievement revoke`
   - `/kick`
   - `/ban`
   - `/unban`
@@ -37,8 +43,20 @@ A Discord bot that watches server messages for spam and can automatically timeou
   - `/unlockdown`
   - `/nickreset`
   - `/welcometest`
+- Member-friendly slash commands:
+  - `/guessnumber guess`
+  - `/guessnumber status`
+  - `/birthday set`
+  - `/birthday clear`
+  - `/birthday view`
+  - `/achievement catalog`
+  - `/achievement list`
+- Administrator game and birthday controls:
+  - `/guessnumber start`
+  - `/guessnumber stop`
+  - `/birthday test`
 
-This is not a full Carl-bot clone. Carl-bot is a large hosted platform with reaction roles, custom commands, suggestions, starboard, autoroles, feeds, reminders, and more. This project covers a strong moderation and welcome core: automod, moderation logs, warning history, timed mutes, bans, kicks, softbans, purge/clear, slowmode, channel lockdown, nickname reset, welcome banners, and a web dashboard.
+This is not a full Carl-bot clone. Carl-bot is a large hosted platform with reaction roles, custom commands, suggestions, starboard, autoroles, feeds, reminders, and more. This project covers a strong moderation and welcome core plus fun server tools: automod, moderation logs, warning history, timed mutes, bans, kicks, softbans, purge/clear, slowmode, channel lockdown, nickname reset, welcome banners, birthday banners, achievements, a guess-the-number game, and a web dashboard.
 
 ## Setup
 
@@ -143,7 +161,8 @@ The dashboard lets admins configure:
 - Flood limits, spam window, duplicate limit, mention limit, caps threshold, emoji threshold, zalgo threshold, ghost-ping window, AutoMod strike reset, strike mute duration, and strike threshold.
 - Invite blocking, scam-domain blocking, bad-word blocking, and custom word/domain lists.
 - Log channel, ignored channels, ignored roles, and user DM notices for moderation actions.
-- Per-command on/off toggles for all admin slash commands.
+- Guess-number, birthday, achievement, and themed welcome-card settings.
+- Per-command on/off toggles.
 
 Moderation DMs are best-effort. If a user has DMs closed or blocks the bot, the moderation action still completes.
 
@@ -155,7 +174,7 @@ Set `DASHBOARD_PASSWORD` before exposing the dashboard beyond your own machine. 
 
 ## Command Access
 
-Every slash command is registered with Discord's `Administrator` default member permission. The bot also checks `Administrator` at runtime, so commands remain locked to server admins even if command permissions are changed later.
+Moderation and admin-only setup commands are registered with Discord's `Administrator` default member permission. Public fun commands are open to members, but admin subcommands such as `/guessnumber start`, `/guessnumber stop`, `/achievement grant`, `/achievement revoke`, and `/birthday test` still check `Administrator` at runtime.
 
 After changing commands, rerun:
 
@@ -164,3 +183,39 @@ npm run deploy
 ```
 
 Use `/welcometest` after enabling welcome messages to send a preview immediately. If welcome is disabled or no channel is set, the command tells you what is missing.
+
+## Fun Modules
+
+Use the dashboard to customize game, birthday, achievement, and welcome banner settings.
+
+Guess number:
+
+```bash
+/guessnumber start channel:#games min:1 max:100 attempts:12
+/guessnumber guess number:42
+/guessnumber status
+/guessnumber stop
+```
+
+Birthdays:
+
+```bash
+/birthday set month:6 day:26
+/birthday view user:@member
+/birthday test channel:#general user:@member
+```
+
+Achievements:
+
+```bash
+/achievement catalog
+/achievement grant user:@member key:first-win
+/achievement list user:@member
+/achievement revoke user:@member key:first-win
+```
+
+Dashboard achievement catalog lines use:
+
+```text
+key | Title | Description | Badge | true
+```

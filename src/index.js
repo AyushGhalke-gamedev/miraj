@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { randomInt } from "node:crypto";
 import {
   Client,
   Events,
@@ -8,6 +9,11 @@ import {
 } from "discord.js";
 import { isCommandEnabled, updateIdList } from "./config.js";
 import { startDashboard } from "./dashboard.js";
+import {
+  buildBirthdayPayload,
+  buildGuessNumberPayload,
+  renderGuessTemplate
+} from "./funBanners.js";
 import { InviteTracker } from "./inviteTracker.js";
 import { configStore } from "./store.js";
 import { SpamTracker } from "./spamDetector.js";
@@ -42,6 +48,7 @@ await configStore.load();
 const spamTracker = new SpamTracker();
 const inviteTracker = new InviteTracker();
 let dashboardStarted = false;
+let birthdaySchedulerStarted = false;
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -62,6 +69,11 @@ client.once(Events.ClientReady, (readyClient) => {
   if (!dashboardStarted) {
     startDashboard(readyClient, configStore);
     dashboardStarted = true;
+  }
+
+  if (!birthdaySchedulerStarted) {
+    startBirthdayScheduler(readyClient);
+    birthdaySchedulerStarted = true;
   }
 });
 
@@ -110,16 +122,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 
   try {
-    if (!await ensureAdministrator(interaction)) {
+    if (!await ensureCommandEnabled(interaction)) {
       return;
     }
 
-    if (!await ensureCommandEnabled(interaction)) {
+    if (requiresAdministrator(interaction) && !await ensureAdministrator(interaction)) {
       return;
     }
 
     if (interaction.commandName === "antispam") {
       await handleAntispamCommand(interaction);
+    } else if (interaction.commandName === "achievement") {
+      await handleAchievementCommand(interaction);
+    } else if (interaction.commandName === "birthday") {
+      await handleBirthdayCommand(interaction);
+    } else if (interaction.commandName === "guessnumber") {
+      await handleGuessNumberCommand(interaction);
     } else if (interaction.commandName === "mute" || interaction.commandName === "timeout") {
       await handleMuteCommand(interaction);
     } else if (interaction.commandName === "unmute") {
@@ -757,6 +775,344 @@ async function handleWelcomeTestCommand(interaction) {
   });
 }
 
+async function handleGuessNumberCommand(interaction) {
+  const subcommand = interaction.options.getSubcommand();
+
+  if (subcommand === "start") {
+    await handleGuessNumberStart(interaction);
+    return;
+  }
+
+  if (subcommand === "guess") {
+    await handleGuessNumberGuess(interaction);
+    return;
+  }
+
+  if (subcommand === "status") {
+    await handleGuessNumberStatus(interaction);
+    return;
+  }
+
+  if (subcommand === "stop") {
+    await handleGuessNumberStop(interaction);
+  }
+}
+
+async function handleGuessNumberStart(interaction) {
+  const config = configStore.get(interaction.guild.id);
+
+  if (!config.guessNumberEnabled) {
+    await replySafely(interaction, { content: "Guess-the-number is disabled in the dashboard." });
+    return;
+  }
+
+  const existing = configStore.getGuessGame(interaction.guild.id);
+
+  if (existing) {
+    await replySafely(interaction, {
+      content: `A game is already running in <#${existing.channelId}>. Stop it first with \`/guessnumber stop\`.`
+    });
+    return;
+  }
+
+  const channel = interaction.options.getChannel("channel")
+    ?? await fetchChannel(interaction.guild, config.guessNumberChannelId)
+    ?? interaction.channel;
+  const min = interaction.options.getInteger("min") ?? config.guessNumberMin;
+  const max = interaction.options.getInteger("max") ?? config.guessNumberMax;
+  const maxAttempts = interaction.options.getInteger("attempts") ?? config.guessNumberMaxAttempts;
+
+  if (!channel?.isTextBased?.()) {
+    await replySafely(interaction, { content: "Choose a text channel for the game." });
+    return;
+  }
+
+  if (max <= min) {
+    await replySafely(interaction, { content: "The max number must be higher than the min number." });
+    return;
+  }
+
+  const game = await configStore.startGuessGame(interaction.guild.id, {
+    min,
+    max,
+    maxAttempts,
+    channelId: channel.id,
+    secretNumber: randomInt(min, max + 1),
+    startedById: interaction.user.id,
+    startedAt: Date.now(),
+    guesses: []
+  });
+  const payload = await buildGuessNumberPayload(interaction.guild, config, {
+    min: game.min,
+    max: game.max,
+    maxAttempts: game.maxAttempts,
+    channelId: channel.id,
+    footer: `${game.maxAttempts} total guesses. Closest minds, step forward.`,
+    content: `Guess-the-number has started in <#${channel.id}>. Range: ${game.min}-${game.max}. Use \`/guessnumber guess\`.`
+  });
+
+  await channel.send(payload);
+  await replySafely(interaction, {
+    content: `Started a guess-the-number game in <#${channel.id}>.`
+  });
+}
+
+async function handleGuessNumberGuess(interaction) {
+  const config = configStore.get(interaction.guild.id);
+
+  if (!config.guessNumberEnabled) {
+    await replySafely(interaction, { content: "Guess-the-number is disabled in the dashboard." });
+    return;
+  }
+
+  const game = configStore.getGuessGame(interaction.guild.id);
+
+  if (!game) {
+    await replySafely(interaction, { content: "No guess-the-number game is running right now." });
+    return;
+  }
+
+  if (interaction.channelId !== game.channelId) {
+    await replySafely(interaction, { content: `The active game is in <#${game.channelId}>.` });
+    return;
+  }
+
+  const number = interaction.options.getInteger("number", true);
+
+  if (number < game.min || number > game.max) {
+    await replySafely(interaction, {
+      content: `Your guess must be between ${game.min} and ${game.max}.`
+    });
+    return;
+  }
+
+  const updatedGame = await configStore.addGuess(interaction.guild.id, {
+    userId: interaction.user.id,
+    userTag: interaction.user.tag,
+    number,
+    createdAt: Date.now()
+  });
+  const attempts = updatedGame.guesses.length;
+
+  if (number === game.secretNumber) {
+    await configStore.stopGuessGame(interaction.guild.id);
+    await maybeGrantAchievement(interaction.guild, interaction.user, "first-win", interaction.client.user);
+    const content = renderGuessTemplate(config.guessNumberWinMessage, interaction.guild, {
+      userId: interaction.user.id,
+      username: interaction.user.username,
+      number,
+      attempts,
+      min: game.min,
+      max: game.max,
+      channelId: interaction.channelId
+    });
+    const payload = await buildGuessNumberPayload(interaction.guild, config, {
+      userId: interaction.user.id,
+      username: interaction.user.username,
+      number,
+      attempts,
+      min: game.min,
+      max: game.max,
+      channelId: interaction.channelId,
+      footer: "Winner found. New game?",
+      content
+    });
+
+    await replyPublic(interaction, payload);
+    return;
+  }
+
+  if (attempts >= game.maxAttempts) {
+    await configStore.stopGuessGame(interaction.guild.id);
+    const payload = await buildGuessNumberPayload(interaction.guild, config, {
+      number: game.secretNumber,
+      attempts,
+      min: game.min,
+      max: game.max,
+      channelId: interaction.channelId,
+      footer: "The game ended with no winner.",
+      content: `No more guesses left. The number was **${game.secretNumber}**.`
+    });
+
+    await replyPublic(interaction, payload);
+    return;
+  }
+
+  const hint = number < game.secretNumber ? "higher" : "lower";
+  const left = game.maxAttempts - attempts;
+
+  await replyPublic(interaction, {
+    content: `${interaction.user} guessed **${number}**. Try **${hint}**. ${left} guess${left === 1 ? "" : "es"} left.`,
+    allowedMentions: { parse: [] }
+  });
+}
+
+async function handleGuessNumberStatus(interaction) {
+  const game = configStore.getGuessGame(interaction.guild.id);
+
+  if (!game) {
+    await replySafely(interaction, { content: "No guess-the-number game is running right now." });
+    return;
+  }
+
+  const guessesLeft = Math.max(0, game.maxAttempts - game.guesses.length);
+  await replySafely(interaction, {
+    content: `Active game in <#${game.channelId}>: ${game.min}-${game.max}, ${game.guesses.length}/${game.maxAttempts} guesses used, ${guessesLeft} left.`
+  });
+}
+
+async function handleGuessNumberStop(interaction) {
+  const game = await configStore.stopGuessGame(interaction.guild.id);
+
+  if (!game) {
+    await replySafely(interaction, { content: "No guess-the-number game is running right now." });
+    return;
+  }
+
+  await replySafely(interaction, {
+    content: `Stopped the game in <#${game.channelId}>. The number was ${game.secretNumber}.`
+  });
+}
+
+async function handleBirthdayCommand(interaction) {
+  const subcommand = interaction.options.getSubcommand();
+
+  if (subcommand === "set") {
+    const month = interaction.options.getInteger("month", true);
+    const day = interaction.options.getInteger("day", true);
+
+    if (!isValidMonthDay(month, day)) {
+      await replySafely(interaction, { content: "That date is not valid." });
+      return;
+    }
+
+    await configStore.setBirthday(interaction.guild.id, interaction.user.id, {
+      month,
+      day,
+      updatedAt: Date.now()
+    });
+    await replySafely(interaction, {
+      content: `Saved your birthday as ${formatBirthday(month, day)}.`
+    });
+    return;
+  }
+
+  if (subcommand === "clear") {
+    const removed = await configStore.clearBirthday(interaction.guild.id, interaction.user.id);
+    await replySafely(interaction, {
+      content: removed ? "Removed your saved birthday." : "You did not have a saved birthday."
+    });
+    return;
+  }
+
+  if (subcommand === "view") {
+    const user = interaction.options.getUser("user") ?? interaction.user;
+    const birthday = configStore.getBirthday(interaction.guild.id, user.id);
+    await replySafely(interaction, {
+      content: birthday
+        ? `${user.tag}'s birthday is ${formatBirthday(birthday.month, birthday.day)}.`
+        : `${user.tag} does not have a saved birthday.`
+    });
+    return;
+  }
+
+  if (subcommand === "test") {
+    await handleBirthdayTest(interaction);
+  }
+}
+
+async function handleBirthdayTest(interaction) {
+  const config = configStore.get(interaction.guild.id);
+  const user = interaction.options.getUser("user") ?? interaction.user;
+  const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+  const channel = interaction.options.getChannel("channel")
+    ?? await fetchChannel(interaction.guild, config.birthdayChannelId)
+    ?? interaction.channel;
+
+  if (!member) {
+    await replySafely(interaction, { content: "That user is not a member of this server." });
+    return;
+  }
+
+  if (!channel?.isTextBased?.()) {
+    await replySafely(interaction, { content: "Choose a valid birthday channel first." });
+    return;
+  }
+
+  await channel.send(await buildBirthdayPayload(member, config));
+  await replySafely(interaction, {
+    content: `Sent a birthday preview for ${user.tag} in <#${channel.id}>.`
+  });
+}
+
+async function handleAchievementCommand(interaction) {
+  const config = configStore.get(interaction.guild.id);
+
+  if (!config.achievementsEnabled) {
+    await replySafely(interaction, { content: "Achievements are disabled in the dashboard." });
+    return;
+  }
+
+  const subcommand = interaction.options.getSubcommand();
+
+  if (subcommand === "catalog") {
+    const enabled = config.achievements.filter((achievement) => achievement.enabled);
+    await replySafely(interaction, {
+      content: enabled.length
+        ? `Available achievements:\n${enabled.map(formatCatalogAchievement).join("\n")}`
+        : "No achievements are enabled right now."
+    });
+    return;
+  }
+
+  if (subcommand === "list") {
+    const user = interaction.options.getUser("user") ?? interaction.user;
+    const achievements = configStore.getUserAchievements(interaction.guild.id, user.id);
+    await replySafely(interaction, {
+      content: achievements.length
+        ? `${user.tag}'s achievements:\n${achievements.map(formatEarnedAchievement).join("\n")}`
+        : `${user.tag} has no achievements yet.`
+    });
+    return;
+  }
+
+  if (subcommand === "grant") {
+    const user = interaction.options.getUser("user", true);
+    const key = interaction.options.getString("key", true);
+    const achievement = findAchievement(config, key);
+
+    if (!achievement) {
+      await replySafely(interaction, { content: `No enabled achievement exists for key \`${key}\`.` });
+      return;
+    }
+
+    const result = await configStore.grantAchievement(interaction.guild.id, user.id, achievement, interaction.user);
+
+    if (result.created) {
+      await announceAchievement(interaction.guild, config, user, result.achievement);
+    }
+
+    await replySafely(interaction, {
+      content: result.created
+        ? `Granted ${achievement.title} to ${user.tag}.`
+        : `${user.tag} already has ${achievement.title}.`
+    });
+    return;
+  }
+
+  if (subcommand === "revoke") {
+    const user = interaction.options.getUser("user", true);
+    const key = normalizeAchievementKey(interaction.options.getString("key", true));
+    const removed = await configStore.revokeAchievement(interaction.guild.id, user.id, key);
+
+    await replySafely(interaction, {
+      content: removed
+        ? `Removed achievement \`${key}\` from ${user.tag}.`
+        : `${user.tag} did not have achievement \`${key}\`.`
+    });
+  }
+}
+
 function readAntispamPatch(interaction) {
   const patch = {};
   const booleanOptions = [
@@ -802,6 +1158,47 @@ function readAntispamPatch(interaction) {
   return patch;
 }
 
+function requiresAdministrator(interaction) {
+  const adminCommands = new Set([
+    "antispam",
+    "ban",
+    "clear",
+    "clearwarnings",
+    "kick",
+    "lockdown",
+    "mute",
+    "nickreset",
+    "purge",
+    "slowmode",
+    "softban",
+    "timeout",
+    "unban",
+    "unlockdown",
+    "unmute",
+    "warn",
+    "warnings",
+    "welcometest"
+  ]);
+
+  if (adminCommands.has(interaction.commandName)) {
+    return true;
+  }
+
+  if (interaction.commandName === "guessnumber") {
+    return ["start", "stop"].includes(interaction.options.getSubcommand());
+  }
+
+  if (interaction.commandName === "achievement") {
+    return ["grant", "revoke"].includes(interaction.options.getSubcommand());
+  }
+
+  if (interaction.commandName === "birthday") {
+    return interaction.options.getSubcommand() === "test";
+  }
+
+  return false;
+}
+
 async function ensureAdministrator(interaction) {
   if (interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
     return true;
@@ -826,8 +1223,177 @@ async function ensureCommandEnabled(interaction) {
   return false;
 }
 
+async function startBirthdayScheduler(readyClient) {
+  await checkBirthdays(readyClient).catch((error) => {
+    console.warn(`Birthday check failed: ${error.message}`);
+  });
+
+  setInterval(() => {
+    checkBirthdays(readyClient).catch((error) => {
+      console.warn(`Birthday check failed: ${error.message}`);
+    });
+  }, 30 * 60 * 1000);
+}
+
+async function checkBirthdays(readyClient) {
+  for (const guild of readyClient.guilds.cache.values()) {
+    const config = configStore.get(guild.id);
+
+    if (!config.birthdayEnabled || !config.birthdayChannelId) {
+      continue;
+    }
+
+    const state = getBirthdayDateState(config);
+
+    if (state.hour < config.birthdayCheckHour) {
+      continue;
+    }
+
+    const birthdays = configStore.getBirthdaysForDate(guild.id, state.month, state.day);
+
+    if (birthdays.length === 0) {
+      continue;
+    }
+
+    const channel = await guild.channels.fetch(config.birthdayChannelId).catch(() => null);
+
+    if (!channel?.isTextBased?.()) {
+      continue;
+    }
+
+    for (const birthday of birthdays) {
+      if (configStore.hasBirthdayDelivery(guild.id, birthday.userId, state.dateKey)) {
+        continue;
+      }
+
+      const member = await guild.members.fetch(birthday.userId).catch(() => null);
+
+      if (!member) {
+        continue;
+      }
+
+      try {
+        await channel.send(await buildBirthdayPayload(member, config));
+        await configStore.markBirthdayDelivered(guild.id, birthday.userId, state.dateKey);
+      } catch (error) {
+        console.warn(`Could not send birthday message for ${birthday.userId}: ${error.message}`);
+      }
+    }
+  }
+}
+
+async function maybeGrantAchievement(guild, user, key, grantedBy) {
+  const config = configStore.get(guild.id);
+
+  if (!config.achievementsEnabled) {
+    return null;
+  }
+
+  const achievement = findAchievement(config, key);
+
+  if (!achievement) {
+    return null;
+  }
+
+  const result = await configStore.grantAchievement(guild.id, user.id, achievement, grantedBy);
+
+  if (result.created) {
+    await announceAchievement(guild, config, user, result.achievement);
+  }
+
+  return result;
+}
+
+async function announceAchievement(guild, config, user, achievement) {
+  if (!config.achievementAnnounceEnabled) {
+    return;
+  }
+
+  const channelId = config.achievementAnnounceChannelId || config.logChannelId;
+
+  if (!channelId) {
+    return;
+  }
+
+  const channel = await guild.channels.fetch(channelId).catch(() => null);
+
+  if (!channel?.isTextBased?.()) {
+    return;
+  }
+
+  await channel.send({
+    content: `${user} earned **${achievement.title}** - ${achievement.description}`,
+    allowedMentions: { parse: [] }
+  });
+}
+
+function findAchievement(config, key) {
+  const normalizedKey = normalizeAchievementKey(key);
+  return config.achievements.find(
+    (achievement) => achievement.enabled && achievement.key === normalizedKey
+  ) ?? null;
+}
+
+function normalizeAchievementKey(key) {
+  return String(key)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function formatCatalogAchievement(achievement) {
+  return `\`${achievement.key}\` [${achievement.badge}] **${achievement.title}** - ${achievement.description}`;
+}
+
+function formatEarnedAchievement(achievement) {
+  const timestamp = Math.floor(achievement.earnedAt / 1000);
+  return `[${achievement.badge}] **${achievement.title}** - <t:${timestamp}:d>`;
+}
+
+function getBirthdayDateState(config) {
+  const shifted = new Date(Date.now() + config.birthdayTimezoneOffsetMinutes * 60 * 1000);
+  const year = shifted.getUTCFullYear();
+  const month = shifted.getUTCMonth() + 1;
+  const day = shifted.getUTCDate();
+  const hour = shifted.getUTCHours();
+  const dateKey = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+
+  return { year, month, day, hour, dateKey };
+}
+
+function isValidMonthDay(month, day) {
+  if (!Number.isInteger(month) || !Number.isInteger(day)) {
+    return false;
+  }
+
+  if (month < 1 || month > 12 || day < 1) {
+    return false;
+  }
+
+  const daysInMonth = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= daysInMonth[month - 1];
+}
+
+function formatBirthday(month, day) {
+  const date = new Date(Date.UTC(2024, month - 1, day));
+  return new Intl.DateTimeFormat("en", {
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC"
+  }).format(date);
+}
+
 async function getBotMember(guild) {
   return guild.members.me ?? await guild.members.fetchMe();
+}
+
+async function fetchChannel(guild, channelId) {
+  if (!channelId) {
+    return null;
+  }
+
+  return guild.channels.fetch(channelId).catch(() => null);
 }
 
 async function deleteMessages(channel, messages) {
@@ -897,6 +1463,19 @@ async function replySafely(interaction, payload) {
     ...payload,
     flags: MessageFlags.Ephemeral,
     allowedMentions: { parse: [] }
+  };
+
+  if (interaction.deferred || interaction.replied) {
+    await interaction.followUp(response);
+  } else {
+    await interaction.reply(response);
+  }
+}
+
+async function replyPublic(interaction, payload) {
+  const response = {
+    ...payload,
+    allowedMentions: payload.allowedMentions ?? { parse: [] }
   };
 
   if (interaction.deferred || interaction.replied) {

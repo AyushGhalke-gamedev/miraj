@@ -250,6 +250,10 @@ button:hover {
   gap: 14px;
 }
 
+.controls-grid.compact {
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+}
+
 .command-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(140px, 1fr));

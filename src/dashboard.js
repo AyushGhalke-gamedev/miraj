@@ -3,7 +3,11 @@ import path from "node:path";
 import express from "express";
 import multer from "multer";
 import { ChannelType } from "discord.js";
-import { COMMAND_TOGGLE_KEYS, NUMERIC_LIMITS } from "./config.js";
+import { BANNER_THEMES, COMMAND_TOGGLE_KEYS, NUMERIC_LIMITS } from "./config.js";
+import {
+  createBirthdayBanner,
+  createGuessNumberBanner
+} from "./funBanners.js";
 import { createWelcomeBanner } from "./welcome.js";
 
 let server = null;
@@ -177,6 +181,42 @@ export function startDashboard(client, store) {
     response.type("png").send(banner);
   });
 
+  app.get("/guild/:guildId/guess-preview.png", async (request, response) => {
+    const guild = client.guilds.cache.get(request.params.guildId);
+
+    if (!guild) {
+      response.status(404).end();
+      return;
+    }
+
+    const config = store.get(guild.id);
+    const banner = await createGuessNumberBanner(guild, config, {
+      min: config.guessNumberMin,
+      max: config.guessNumberMax,
+      maxAttempts: config.guessNumberMaxAttempts,
+      attempts: 4,
+      channelId: config.guessNumberChannelId,
+      footer: "Preview game banner"
+    });
+
+    response.type("png").send(banner);
+  });
+
+  app.get("/guild/:guildId/birthday-preview.png", async (request, response) => {
+    const guild = client.guilds.cache.get(request.params.guildId);
+
+    if (!guild) {
+      response.status(404).end();
+      return;
+    }
+
+    const member = guild.members.me ?? await guild.members.fetchMe();
+    const config = store.get(guild.id);
+    const banner = await createBirthdayBanner(member, config);
+
+    response.type("png").send(banner);
+  });
+
   server = app.listen(port, host, () => {
     console.log(`Dashboard running at http://${host}:${port}`);
   });
@@ -281,6 +321,9 @@ function renderGuildSettings({ guild, config, botMember, channels, roles, saved 
   <form class="settings-form" method="post" action="/guild/${guild.id}/settings" enctype="multipart/form-data">
     <div class="tab-bar" role="tablist" aria-label="Settings sections">
       <button class="tab-button active" type="button" data-tab="welcome">Welcome</button>
+      <button class="tab-button" type="button" data-tab="games">Games</button>
+      <button class="tab-button" type="button" data-tab="birthdays">Birthdays</button>
+      <button class="tab-button" type="button" data-tab="achievements">Achievements</button>
       <button class="tab-button" type="button" data-tab="profile">Bot Profile</button>
       <button class="tab-button" type="button" data-tab="automod">Automod</button>
       <button class="tab-button" type="button" data-tab="moderation">Moderation</button>
@@ -313,6 +356,7 @@ function renderGuildSettings({ guild, config, botMember, channels, roles, saved 
             <span>Banner invite line</span>
             <input name="welcome_banner_invite_line" maxlength="180" value="${escapeHtml(config.welcomeBannerInviteLine)}">
           </label>
+          ${renderThemeSelect("welcome_banner_theme", "Banner theme", config.welcomeBannerTheme)}
         </div>
         <div class="field-stack">
           <div class="banner-preview">
@@ -328,6 +372,120 @@ function renderGuildSettings({ guild, config, botMember, channels, roles, saved 
             ${renderColor("welcome_banner_accent_color", "Accent", config.welcomeBannerAccentColor)}
             ${renderColor("welcome_banner_text_color", "Text", config.welcomeBannerTextColor)}
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" data-tab-panel="games">
+      <div class="panel-heading">
+        <div>
+          <h2>Guess Number</h2>
+        </div>
+        ${renderToggle("guess_number_enabled", config.guessNumberEnabled)}
+      </div>
+      <div class="two-column">
+        <div class="field-stack">
+          ${renderChannelSelect("guess_number_channel_id", "Default game channel", channels, config.guessNumberChannelId)}
+          <div class="controls-grid compact">
+            ${renderNumber("guess_number_min", "Min", config.guessNumberMin, NUMERIC_LIMITS.guessNumberMin)}
+            ${renderNumber("guess_number_max", "Max", config.guessNumberMax, NUMERIC_LIMITS.guessNumberMax)}
+            ${renderNumber("guess_number_max_attempts", "Attempts", config.guessNumberMaxAttempts, NUMERIC_LIMITS.guessNumberMaxAttempts)}
+          </div>
+          <label>
+            <span>Banner title</span>
+            <input name="guess_number_banner_title" maxlength="120" value="${escapeHtml(config.guessNumberBannerTitle)}">
+          </label>
+          <label>
+            <span>Banner subtitle</span>
+            <input name="guess_number_banner_subtitle" maxlength="180" value="${escapeHtml(config.guessNumberBannerSubtitle)}">
+          </label>
+          <label>
+            <span>Winner message</span>
+            <input name="guess_number_win_message" maxlength="300" value="${escapeHtml(config.guessNumberWinMessage)}">
+          </label>
+          ${renderThemeSelect("guess_number_banner_theme", "Banner theme", config.guessNumberBannerTheme)}
+        </div>
+        <div class="field-stack">
+          <div class="banner-preview">
+            <img src="/guild/${guild.id}/guess-preview.png?${Date.now()}" alt="Guess number banner preview">
+          </div>
+          ${renderToggle("guess_number_banner_enabled", config.guessNumberBannerEnabled, "Banner image")}
+          <label>
+            <span>Background image URL</span>
+            <input name="guess_number_banner_background_url" type="url" value="${escapeHtml(config.guessNumberBannerBackgroundUrl ?? "")}">
+          </label>
+          <div class="color-grid">
+            ${renderColor("guess_number_banner_background_color", "Background", config.guessNumberBannerBackgroundColor)}
+            ${renderColor("guess_number_banner_accent_color", "Accent", config.guessNumberBannerAccentColor)}
+            ${renderColor("guess_number_banner_text_color", "Text", config.guessNumberBannerTextColor)}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" data-tab-panel="birthdays">
+      <div class="panel-heading">
+        <div>
+          <h2>Birthdays</h2>
+        </div>
+        ${renderToggle("birthday_enabled", config.birthdayEnabled)}
+      </div>
+      <div class="two-column">
+        <div class="field-stack">
+          ${renderChannelSelect("birthday_channel_id", "Birthday channel", channels, config.birthdayChannelId)}
+          <div class="controls-grid compact">
+            ${renderNumber("birthday_check_hour", "Send hour", config.birthdayCheckHour, NUMERIC_LIMITS.birthdayCheckHour)}
+            ${renderNumber("birthday_timezone_offset_minutes", "Timezone offset minutes", config.birthdayTimezoneOffsetMinutes, NUMERIC_LIMITS.birthdayTimezoneOffsetMinutes)}
+          </div>
+          <label>
+            <span>Birthday message</span>
+            <textarea name="birthday_message" rows="5" maxlength="1000">${escapeHtml(config.birthdayMessage)}</textarea>
+          </label>
+          <label>
+            <span>Banner title</span>
+            <input name="birthday_banner_title" maxlength="120" value="${escapeHtml(config.birthdayBannerTitle)}">
+          </label>
+          <label>
+            <span>Banner subtitle</span>
+            <input name="birthday_banner_subtitle" maxlength="180" value="${escapeHtml(config.birthdayBannerSubtitle)}">
+          </label>
+          ${renderThemeSelect("birthday_banner_theme", "Banner theme", config.birthdayBannerTheme)}
+        </div>
+        <div class="field-stack">
+          <div class="banner-preview">
+            <img src="/guild/${guild.id}/birthday-preview.png?${Date.now()}" alt="Birthday banner preview">
+          </div>
+          ${renderToggle("birthday_banner_enabled", config.birthdayBannerEnabled, "Banner image")}
+          <label>
+            <span>Background image URL</span>
+            <input name="birthday_banner_background_url" type="url" value="${escapeHtml(config.birthdayBannerBackgroundUrl ?? "")}">
+          </label>
+          <div class="color-grid">
+            ${renderColor("birthday_banner_background_color", "Background", config.birthdayBannerBackgroundColor)}
+            ${renderColor("birthday_banner_accent_color", "Accent", config.birthdayBannerAccentColor)}
+            ${renderColor("birthday_banner_text_color", "Text", config.birthdayBannerTextColor)}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" data-tab-panel="achievements">
+      <div class="panel-heading">
+        <div>
+          <h2>Achievements</h2>
+        </div>
+        ${renderToggle("achievements_enabled", config.achievementsEnabled)}
+      </div>
+      <div class="two-column">
+        <div class="field-stack">
+          ${renderToggle("achievement_announce_enabled", config.achievementAnnounceEnabled, "Announce earned achievements")}
+          ${renderChannelSelect("achievement_announce_channel_id", "Announce channel", channels, config.achievementAnnounceChannelId)}
+        </div>
+        <div class="field-stack">
+          <label>
+            <span>Achievement catalog</span>
+            <textarea name="achievements_catalog" rows="12">${escapeHtml(formatAchievementsCatalog(config.achievements))}</textarea>
+          </label>
         </div>
       </div>
     </section>
@@ -490,6 +648,15 @@ function renderColor(name, label, value) {
   </label>`;
 }
 
+function renderThemeSelect(name, label, selectedTheme) {
+  return `<label>
+    <span>${escapeHtml(label)}</span>
+    <select name="${name}">
+      ${BANNER_THEMES.map((theme) => renderOption(theme, formatThemeName(theme), selectedTheme)).join("")}
+    </select>
+  </label>`;
+}
+
 function renderChannelSelect(name, label, channels, selectedId) {
   return `<label>
     <span>${escapeHtml(label)}</span>
@@ -513,6 +680,13 @@ function renderOption(value, label, selected) {
   const selectedIds = Array.isArray(selected) ? selected : [selected];
   const isSelected = selectedIds.includes(value);
   return `<option value="${escapeHtml(value)}" ${isSelected ? "selected" : ""}>${escapeHtml(label)}</option>`;
+}
+
+function formatThemeName(theme) {
+  return theme
+    .split("-")
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
 }
 
 async function applyBotProfileUpdate(guild, currentConfig, body, files = {}) {
@@ -608,10 +782,42 @@ function readSettingsPatch(body) {
     welcomeBannerTitle: body.welcome_banner_title,
     welcomeBannerSubtitle: body.welcome_banner_subtitle,
     welcomeBannerInviteLine: body.welcome_banner_invite_line,
+    welcomeBannerTheme: body.welcome_banner_theme,
     welcomeBannerBackgroundUrl: body.welcome_banner_background_url || null,
     welcomeBannerBackgroundColor: body.welcome_banner_background_color,
     welcomeBannerAccentColor: body.welcome_banner_accent_color,
     welcomeBannerTextColor: body.welcome_banner_text_color,
+    guessNumberEnabled: body.guess_number_enabled === "on",
+    guessNumberChannelId: body.guess_number_channel_id || null,
+    guessNumberMin: body.guess_number_min,
+    guessNumberMax: body.guess_number_max,
+    guessNumberMaxAttempts: body.guess_number_max_attempts,
+    guessNumberBannerEnabled: body.guess_number_banner_enabled === "on",
+    guessNumberBannerTheme: body.guess_number_banner_theme,
+    guessNumberBannerTitle: body.guess_number_banner_title,
+    guessNumberBannerSubtitle: body.guess_number_banner_subtitle,
+    guessNumberWinMessage: body.guess_number_win_message,
+    guessNumberBannerBackgroundUrl: body.guess_number_banner_background_url || null,
+    guessNumberBannerBackgroundColor: body.guess_number_banner_background_color,
+    guessNumberBannerAccentColor: body.guess_number_banner_accent_color,
+    guessNumberBannerTextColor: body.guess_number_banner_text_color,
+    birthdayEnabled: body.birthday_enabled === "on",
+    birthdayChannelId: body.birthday_channel_id || null,
+    birthdayMessage: body.birthday_message,
+    birthdayBannerEnabled: body.birthday_banner_enabled === "on",
+    birthdayBannerTheme: body.birthday_banner_theme,
+    birthdayBannerTitle: body.birthday_banner_title,
+    birthdayBannerSubtitle: body.birthday_banner_subtitle,
+    birthdayBannerBackgroundUrl: body.birthday_banner_background_url || null,
+    birthdayBannerBackgroundColor: body.birthday_banner_background_color,
+    birthdayBannerAccentColor: body.birthday_banner_accent_color,
+    birthdayBannerTextColor: body.birthday_banner_text_color,
+    birthdayCheckHour: body.birthday_check_hour,
+    birthdayTimezoneOffsetMinutes: body.birthday_timezone_offset_minutes,
+    achievementsEnabled: body.achievements_enabled === "on",
+    achievementAnnounceEnabled: body.achievement_announce_enabled === "on",
+    achievementAnnounceChannelId: body.achievement_announce_channel_id || null,
+    achievements: body.achievements_catalog,
     ignoredChannelIds: toArray(body.ignored_channel_ids),
     ignoredRoleIds: toArray(body.ignored_role_ids)
   };
@@ -646,6 +852,18 @@ function previewInviteInfo() {
     inviterMention: "im_mercyxx",
     inviterInvites: 1
   };
+}
+
+function formatAchievementsCatalog(achievements) {
+  return achievements
+    .map((achievement) => [
+      achievement.key,
+      achievement.title,
+      achievement.description,
+      achievement.badge,
+      achievement.enabled ? "true" : "false"
+    ].join(" | "))
+    .join("\n");
 }
 
 function isAuthenticated(request, secret) {

@@ -36,3 +36,35 @@ test("normalizes chat protection lists", () => {
   assert.equal(config.welcomeShowInviter, false);
   assert.equal(config.welcomeBannerInviteLine, "Invited by {inviterName}");
 });
+
+test("normalizes fun module settings", () => {
+  const config = normalizeGuildConfig({
+    welcomeBannerTheme: "neon",
+    guessNumberMin: 50,
+    guessNumberMax: 40,
+    guessNumberBannerTheme: "arcade",
+    guessNumberBannerBackgroundColor: "nope",
+    birthdayBannerTheme: "pastel",
+    birthdayTimezoneOffsetMinutes: 9999,
+    achievements: "sharp | Sharp Guess | Guessed the number fast | AIM | true\nbad key! | Nice | Desc | OK | false"
+  });
+
+  assert.equal(config.welcomeBannerTheme, "neon");
+  assert.equal(config.guessNumberMin, 50);
+  assert.equal(config.guessNumberMax, 51);
+  assert.equal(config.guessNumberBannerTheme, "arcade");
+  assert.equal(config.guessNumberBannerBackgroundColor, "#111827");
+  assert.equal(config.birthdayBannerTheme, "pastel");
+  assert.equal(config.birthdayTimezoneOffsetMinutes, 840);
+  assert.deepEqual(
+    config.achievements.map((achievement) => [
+      achievement.key,
+      achievement.title,
+      achievement.enabled
+    ]),
+    [
+      ["sharp", "Sharp Guess", true],
+      ["bad-key", "Nice", false]
+    ]
+  );
+});

@@ -9,6 +9,10 @@ export class ConfigStore {
     this.filePath = filePath;
     this.guilds = new Map();
     this.warnings = new Map();
+    this.guessGames = new Map();
+    this.birthdays = new Map();
+    this.birthdayDeliveries = new Map();
+    this.achievements = new Map();
   }
 
   async load() {
@@ -17,6 +21,14 @@ export class ConfigStore {
       const data = JSON.parse(raw);
       const guilds = data.guilds && typeof data.guilds === "object" ? data.guilds : {};
       const warnings = data.warnings && typeof data.warnings === "object" ? data.warnings : {};
+      const guessGames = data.guessGames && typeof data.guessGames === "object" ? data.guessGames : {};
+      const birthdays = data.birthdays && typeof data.birthdays === "object" ? data.birthdays : {};
+      const birthdayDeliveries = data.birthdayDeliveries && typeof data.birthdayDeliveries === "object"
+        ? data.birthdayDeliveries
+        : {};
+      const achievements = data.achievements && typeof data.achievements === "object"
+        ? data.achievements
+        : {};
 
       this.guilds = new Map(
         Object.entries(guilds).map(([guildId, config]) => [
@@ -28,6 +40,29 @@ export class ConfigStore {
         Object.entries(warnings).map(([guildId, guildWarnings]) => [
           guildId,
           normalizeGuildWarnings(guildWarnings)
+        ])
+      );
+      this.guessGames = new Map(
+        Object.entries(guessGames)
+          .map(([guildId, game]) => [guildId, normalizeGuessGame(game)])
+          .filter(([, game]) => game)
+      );
+      this.birthdays = new Map(
+        Object.entries(birthdays).map(([guildId, guildBirthdays]) => [
+          guildId,
+          normalizeGuildBirthdays(guildBirthdays)
+        ])
+      );
+      this.birthdayDeliveries = new Map(
+        Object.entries(birthdayDeliveries).map(([guildId, deliveries]) => [
+          guildId,
+          normalizeGuildBirthdayDeliveries(deliveries)
+        ])
+      );
+      this.achievements = new Map(
+        Object.entries(achievements).map(([guildId, guildAchievements]) => [
+          guildId,
+          normalizeGuildAchievements(guildAchievements)
         ])
       );
     } catch (error) {
@@ -98,6 +133,134 @@ export class ConfigStore {
     return userWarnings.length - keepCount;
   }
 
+  getGuessGame(guildId) {
+    const game = this.guessGames.get(guildId);
+    return game ? clone(game) : null;
+  }
+
+  async startGuessGame(guildId, game) {
+    const nextGame = normalizeGuessGame({
+      ...game,
+      id: game.id ?? `${Date.now()}`
+    });
+
+    if (!nextGame) {
+      throw new Error("Guess number game data is invalid.");
+    }
+
+    this.guessGames.set(guildId, nextGame);
+    await this.save();
+    return clone(nextGame);
+  }
+
+  async addGuess(guildId, guess) {
+    const game = this.guessGames.get(guildId);
+
+    if (!game) {
+      return null;
+    }
+
+    const nextGuess = normalizeGuess(guess);
+    game.guesses.push(nextGuess);
+    await this.save();
+    return clone(game);
+  }
+
+  async stopGuessGame(guildId) {
+    const game = this.guessGames.get(guildId);
+    this.guessGames.delete(guildId);
+    await this.save();
+    return game ? clone(game) : null;
+  }
+
+  getBirthday(guildId, userId) {
+    const birthday = this.birthdays.get(guildId)?.get(userId);
+    return birthday ? { ...birthday } : null;
+  }
+
+  getBirthdaysForDate(guildId, month, day) {
+    const guildBirthdays = this.birthdays.get(guildId);
+
+    if (!guildBirthdays) {
+      return [];
+    }
+
+    return [...guildBirthdays.entries()]
+      .filter(([, birthday]) => birthday.month === month && birthday.day === day)
+      .map(([userId, birthday]) => ({ userId, ...birthday }));
+  }
+
+  async setBirthday(guildId, userId, birthday) {
+    const guildBirthdays = this.getGuildBirthdays(guildId);
+    const nextBirthday = normalizeBirthday({
+      ...birthday,
+      userId,
+      updatedAt: birthday.updatedAt ?? Date.now()
+    });
+
+    if (!nextBirthday) {
+      throw new Error("Birthday date is invalid.");
+    }
+
+    guildBirthdays.set(userId, nextBirthday);
+    await this.save();
+    return { ...nextBirthday };
+  }
+
+  async clearBirthday(guildId, userId) {
+    const guildBirthdays = this.getGuildBirthdays(guildId);
+    const removed = guildBirthdays.delete(userId);
+    await this.save();
+    return removed;
+  }
+
+  hasBirthdayDelivery(guildId, userId, dateKey) {
+    return this.birthdayDeliveries.get(guildId)?.get(userId) === dateKey;
+  }
+
+  async markBirthdayDelivered(guildId, userId, dateKey) {
+    const guildDeliveries = this.getGuildBirthdayDeliveries(guildId);
+    guildDeliveries.set(userId, String(dateKey));
+    await this.save();
+  }
+
+  getUserAchievements(guildId, userId) {
+    const userAchievements = this.achievements.get(guildId)?.get(userId) ?? [];
+    return userAchievements.map((achievement) => ({ ...achievement }));
+  }
+
+  async grantAchievement(guildId, userId, achievement, grantedBy = {}) {
+    const guildAchievements = this.getGuildAchievements(guildId);
+    const userAchievements = guildAchievements.get(userId) ?? [];
+    const existing = userAchievements.find((item) => item.key === achievement.key);
+
+    if (existing) {
+      return { achievement: { ...existing }, created: false };
+    }
+
+    const nextAchievement = normalizeEarnedAchievement({
+      ...achievement,
+      userId,
+      grantedById: grantedBy.id,
+      grantedByTag: grantedBy.tag,
+      earnedAt: achievement.earnedAt ?? Date.now()
+    });
+
+    guildAchievements.set(userId, [...userAchievements, nextAchievement]);
+    await this.save();
+    return { achievement: { ...nextAchievement }, created: true };
+  }
+
+  async revokeAchievement(guildId, userId, key) {
+    const guildAchievements = this.getGuildAchievements(guildId);
+    const userAchievements = guildAchievements.get(userId) ?? [];
+    const nextAchievements = userAchievements.filter((achievement) => achievement.key !== key);
+
+    guildAchievements.set(userId, nextAchievements);
+    await this.save();
+    return userAchievements.length - nextAchievements.length;
+  }
+
   async save() {
     await fs.mkdir(path.dirname(this.filePath), { recursive: true });
 
@@ -108,10 +271,29 @@ export class ConfigStore {
         Object.fromEntries(guildWarnings)
       ])
     );
+    const guessGames = Object.fromEntries(this.guessGames);
+    const birthdays = Object.fromEntries(
+      [...this.birthdays.entries()].map(([guildId, guildBirthdays]) => [
+        guildId,
+        Object.fromEntries(guildBirthdays)
+      ])
+    );
+    const birthdayDeliveries = Object.fromEntries(
+      [...this.birthdayDeliveries.entries()].map(([guildId, deliveries]) => [
+        guildId,
+        Object.fromEntries(deliveries)
+      ])
+    );
+    const achievements = Object.fromEntries(
+      [...this.achievements.entries()].map(([guildId, guildAchievements]) => [
+        guildId,
+        Object.fromEntries(guildAchievements)
+      ])
+    );
 
     await fs.writeFile(
       this.filePath,
-      `${JSON.stringify({ guilds, warnings }, null, 2)}\n`,
+      `${JSON.stringify({ guilds, warnings, guessGames, birthdays, birthdayDeliveries, achievements }, null, 2)}\n`,
       "utf8"
     );
   }
@@ -122,6 +304,30 @@ export class ConfigStore {
     }
 
     return this.warnings.get(guildId);
+  }
+
+  getGuildBirthdays(guildId) {
+    if (!this.birthdays.has(guildId)) {
+      this.birthdays.set(guildId, new Map());
+    }
+
+    return this.birthdays.get(guildId);
+  }
+
+  getGuildBirthdayDeliveries(guildId) {
+    if (!this.birthdayDeliveries.has(guildId)) {
+      this.birthdayDeliveries.set(guildId, new Map());
+    }
+
+    return this.birthdayDeliveries.get(guildId);
+  }
+
+  getGuildAchievements(guildId) {
+    if (!this.achievements.has(guildId)) {
+      this.achievements.set(guildId, new Map());
+    }
+
+    return this.achievements.get(guildId);
   }
 }
 
@@ -152,4 +358,130 @@ function normalizeWarning(warning) {
     source: String(warning.source ?? "manual"),
     createdAt: Number.isFinite(createdAt) ? createdAt : Date.now()
   };
+}
+
+function normalizeGuessGame(game) {
+  if (!game || typeof game !== "object") {
+    return null;
+  }
+
+  const min = Math.max(1, Math.round(Number(game.min)));
+  const max = Math.round(Number(game.max));
+  const secretNumber = Math.round(Number(game.secretNumber));
+  const maxAttempts = Math.max(1, Math.round(Number(game.maxAttempts)));
+
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) {
+    return null;
+  }
+
+  if (!Number.isFinite(secretNumber) || secretNumber < min || secretNumber > max) {
+    return null;
+  }
+
+  return {
+    id: String(game.id ?? `${Date.now()}`),
+    min,
+    max,
+    secretNumber,
+    maxAttempts: Number.isFinite(maxAttempts) ? maxAttempts : 12,
+    channelId: String(game.channelId ?? ""),
+    startedById: String(game.startedById ?? ""),
+    startedAt: normalizeTimestamp(game.startedAt),
+    guesses: Array.isArray(game.guesses) ? game.guesses.map(normalizeGuess) : []
+  };
+}
+
+function normalizeGuess(guess) {
+  return {
+    userId: String(guess.userId ?? ""),
+    userTag: String(guess.userTag ?? "Unknown user").slice(0, 80),
+    number: Math.round(Number(guess.number)),
+    createdAt: normalizeTimestamp(guess.createdAt)
+  };
+}
+
+function normalizeGuildBirthdays(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return new Map();
+  }
+
+  return new Map(
+    Object.entries(value)
+      .map(([userId, birthday]) => [userId, normalizeBirthday({ ...birthday, userId })])
+      .filter(([, birthday]) => birthday)
+  );
+}
+
+function normalizeBirthday(birthday) {
+  const month = Math.round(Number(birthday.month));
+  const day = Math.round(Number(birthday.day));
+
+  if (!isValidMonthDay(month, day)) {
+    return null;
+  }
+
+  return {
+    userId: String(birthday.userId ?? ""),
+    month,
+    day,
+    updatedAt: normalizeTimestamp(birthday.updatedAt)
+  };
+}
+
+function normalizeGuildBirthdayDeliveries(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return new Map();
+  }
+
+  return new Map(
+    Object.entries(value).map(([userId, dateKey]) => [userId, String(dateKey)])
+  );
+}
+
+function normalizeGuildAchievements(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return new Map();
+  }
+
+  return new Map(
+    Object.entries(value).map(([userId, achievements]) => [
+      userId,
+      Array.isArray(achievements) ? achievements.map(normalizeEarnedAchievement) : []
+    ])
+  );
+}
+
+function normalizeEarnedAchievement(achievement) {
+  return {
+    key: String(achievement.key ?? "").slice(0, 32),
+    title: String(achievement.title ?? "Achievement").slice(0, 80),
+    description: String(achievement.description ?? "Custom server achievement.").slice(0, 180),
+    badge: String(achievement.badge ?? "STAR").slice(0, 12),
+    userId: String(achievement.userId ?? ""),
+    grantedById: String(achievement.grantedById ?? ""),
+    grantedByTag: String(achievement.grantedByTag ?? "Unknown").slice(0, 80),
+    earnedAt: normalizeTimestamp(achievement.earnedAt)
+  };
+}
+
+function normalizeTimestamp(value) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) ? timestamp : Date.now();
+}
+
+function isValidMonthDay(month, day) {
+  if (!Number.isInteger(month) || !Number.isInteger(day)) {
+    return false;
+  }
+
+  if (month < 1 || month > 12 || day < 1) {
+    return false;
+  }
+
+  const daysInMonth = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= daysInMonth[month - 1];
+}
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
 }

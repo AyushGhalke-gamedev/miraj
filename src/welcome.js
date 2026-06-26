@@ -78,6 +78,7 @@ export function renderWelcomeTemplate(template, member, inviteInfo = null) {
 async function drawBackground(context, loadImage, config) {
   const baseColor = config.welcomeBannerBackgroundColor;
   const accentColor = config.welcomeBannerAccentColor;
+  const theme = config.welcomeBannerTheme ?? "classic";
 
   context.fillStyle = baseColor;
   context.fillRect(0, 0, BANNER_WIDTH, BANNER_HEIGHT);
@@ -92,6 +93,48 @@ async function drawBackground(context, loadImage, config) {
     }
   }
 
+  if (theme === "pastel") {
+    const gradient = context.createLinearGradient(0, 0, BANNER_WIDTH, BANNER_HEIGHT);
+    gradient.addColorStop(0, withAlpha(accentColor, 0.7));
+    gradient.addColorStop(0.5, withAlpha(baseColor, 0.72));
+    gradient.addColorStop(1, "rgba(255, 255, 255, 0.22)");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, BANNER_WIDTH, BANNER_HEIGHT);
+    drawConfetti(context, accentColor);
+    return;
+  }
+
+  if (theme === "arcade") {
+    context.fillStyle = "rgba(255, 255, 255, 0.05)";
+    for (let x = -80; x < BANNER_WIDTH; x += 80) {
+      context.fillRect(x, 0, 26, BANNER_HEIGHT);
+    }
+    context.fillStyle = withAlpha(accentColor, 0.88);
+    context.fillRect(0, 0, BANNER_WIDTH, 10);
+    context.fillRect(0, BANNER_HEIGHT - 10, BANNER_WIDTH, 10);
+    return;
+  }
+
+  if (theme === "neon") {
+    const gradient = context.createRadialGradient(760, 60, 40, 760, 60, 520);
+    gradient.addColorStop(0, withAlpha(accentColor, 0.72));
+    gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, BANNER_WIDTH, BANNER_HEIGHT);
+    drawNeonLines(context, accentColor);
+    return;
+  }
+
+  if (theme === "midnight") {
+    drawStars(context, accentColor);
+    const gradient = context.createLinearGradient(0, 0, BANNER_WIDTH, BANNER_HEIGHT);
+    gradient.addColorStop(0, "rgba(255, 255, 255, 0.04)");
+    gradient.addColorStop(1, withAlpha(accentColor, 0.25));
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, BANNER_WIDTH, BANNER_HEIGHT);
+    return;
+  }
+
   const gradient = context.createLinearGradient(0, 0, BANNER_WIDTH, BANNER_HEIGHT);
   gradient.addColorStop(0, withAlpha(accentColor, 0.2));
   gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
@@ -100,6 +143,37 @@ async function drawBackground(context, loadImage, config) {
 
   context.fillStyle = withAlpha(accentColor, 0.9);
   context.fillRect(0, BANNER_HEIGHT - 12, BANNER_WIDTH, 12);
+}
+
+function drawConfetti(context, accentColor) {
+  const colors = [accentColor, "#ffffff", "#facc15", "#38bdf8", "#fb7185"];
+
+  for (let index = 0; index < 46; index += 1) {
+    context.fillStyle = withAlpha(colors[index % colors.length], 0.64);
+    context.fillRect((index * 83) % BANNER_WIDTH, (index * 47) % BANNER_HEIGHT, 12, 6);
+  }
+}
+
+function drawNeonLines(context, accentColor) {
+  context.strokeStyle = withAlpha(accentColor, 0.64);
+  context.lineWidth = 3;
+
+  for (let index = 0; index < 7; index += 1) {
+    context.beginPath();
+    context.moveTo(520 + index * 74, 0);
+    context.lineTo(350 + index * 74, BANNER_HEIGHT);
+    context.stroke();
+  }
+}
+
+function drawStars(context, accentColor) {
+  for (let index = 0; index < 72; index += 1) {
+    const size = index % 5 === 0 ? 3 : 2;
+    context.fillStyle = index % 4 === 0
+      ? withAlpha(accentColor, 0.75)
+      : "rgba(255, 255, 255, 0.55)";
+    context.fillRect((index * 97) % BANNER_WIDTH, (index * 53) % BANNER_HEIGHT, size, size);
+  }
 }
 
 async function drawAvatar(context, loadImage, member) {

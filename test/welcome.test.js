@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { normalizeGuildConfig } from "../src/config.js";
+import { renderBirthdayTemplate, renderGuessTemplate } from "../src/funBanners.js";
 import { renderWelcomeTemplate } from "../src/welcome.js";
 
 test("welcome templates replace member and server placeholders", () => {
@@ -55,4 +56,27 @@ test("welcome config normalizes colors and custom background URLs", () => {
   assert.equal(config.welcomeBannerBackgroundColor, "#20232a");
   assert.equal(config.welcomeBannerAccentColor, "#abcdef");
   assert.equal(config.welcomeBannerBackgroundUrl, "https://example.com/banner.png");
+});
+
+test("fun templates replace birthday and game placeholders", () => {
+  const guild = { name: "Code Club" };
+  const member = {
+    id: "123",
+    displayName: "Captain",
+    user: { username: "ayush" },
+    guild: { name: "Code Club", memberCount: 42 }
+  };
+
+  assert.equal(
+    renderBirthdayTemplate("Happy birthday {mention} from {server}, {displayName}!", member),
+    "Happy birthday <@123> from Code Club, Captain!"
+  );
+  assert.equal(
+    renderGuessTemplate("{mention} won with {number} after {attempts} tries in {server}.", guild, {
+      userId: "123",
+      number: 7,
+      attempts: 4
+    }),
+    "<@123> won with 7 after 4 tries in Code Club."
+  );
 });

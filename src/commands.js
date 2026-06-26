@@ -458,8 +458,180 @@ const welcomeTestCommand = new SlashCommandBuilder()
       .setDescription("Member to use in the preview. Defaults to you.")
   );
 
+const guessNumberCommand = new SlashCommandBuilder()
+  .setName("guessnumber")
+  .setDescription("Play a server guess-the-number mini game.")
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("start")
+      .setDescription("Start a guess-the-number game.")
+      .addChannelOption((option) =>
+        option
+          .setName("channel")
+          .setDescription("Channel where members should play. Defaults to the current channel.")
+          .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+      )
+      .addIntegerOption((option) =>
+        option
+          .setName("min")
+          .setDescription("Smallest possible number.")
+          .setMinValue(NUMERIC_LIMITS.guessNumberMin.min)
+          .setMaxValue(NUMERIC_LIMITS.guessNumberMin.max)
+      )
+      .addIntegerOption((option) =>
+        option
+          .setName("max")
+          .setDescription("Largest possible number.")
+          .setMinValue(NUMERIC_LIMITS.guessNumberMax.min)
+          .setMaxValue(NUMERIC_LIMITS.guessNumberMax.max)
+      )
+      .addIntegerOption((option) =>
+        option
+          .setName("attempts")
+          .setDescription("Total guesses allowed before the game ends.")
+          .setMinValue(NUMERIC_LIMITS.guessNumberMaxAttempts.min)
+          .setMaxValue(NUMERIC_LIMITS.guessNumberMaxAttempts.max)
+      )
+  )
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("guess")
+      .setDescription("Guess the active game's secret number.")
+      .addIntegerOption((option) =>
+        option
+          .setName("number")
+          .setDescription("Your guess.")
+          .setRequired(true)
+          .setMinValue(NUMERIC_LIMITS.guessNumberMin.min)
+          .setMaxValue(NUMERIC_LIMITS.guessNumberMax.max)
+      )
+  )
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("status")
+      .setDescription("Show the active guess-the-number game.")
+  )
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("stop")
+      .setDescription("Stop the active guess-the-number game.")
+  );
+
+const birthdayCommand = new SlashCommandBuilder()
+  .setName("birthday")
+  .setDescription("Set or preview server birthday messages.")
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("set")
+      .setDescription("Set your birthday.")
+      .addIntegerOption((option) =>
+        option
+          .setName("month")
+          .setDescription("Birthday month.")
+          .setRequired(true)
+          .setMinValue(1)
+          .setMaxValue(12)
+      )
+      .addIntegerOption((option) =>
+        option
+          .setName("day")
+          .setDescription("Birthday day.")
+          .setRequired(true)
+          .setMinValue(1)
+          .setMaxValue(31)
+      )
+  )
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("clear")
+      .setDescription("Remove your saved birthday.")
+  )
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("view")
+      .setDescription("View a saved birthday.")
+      .addUserOption((option) =>
+        option
+          .setName("user")
+          .setDescription("Member to check. Defaults to you.")
+      )
+  )
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("test")
+      .setDescription("Send a birthday banner preview.")
+      .addUserOption((option) =>
+        option
+          .setName("user")
+          .setDescription("Member to use in the preview. Defaults to you.")
+      )
+      .addChannelOption((option) =>
+        option
+          .setName("channel")
+          .setDescription("Channel to send the preview in.")
+          .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+      )
+  );
+
+const achievementCommand = new SlashCommandBuilder()
+  .setName("achievement")
+  .setDescription("View and manage custom server achievements.")
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("catalog")
+      .setDescription("Show available server achievements.")
+  )
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("list")
+      .setDescription("Show earned achievements.")
+      .addUserOption((option) =>
+        option
+          .setName("user")
+          .setDescription("Member to check. Defaults to you.")
+      )
+  )
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("grant")
+      .setDescription("Grant a custom achievement to a member.")
+      .addUserOption((option) =>
+        option
+          .setName("user")
+          .setDescription("Member to grant the achievement to.")
+          .setRequired(true)
+      )
+      .addStringOption((option) =>
+        option
+          .setName("key")
+          .setDescription("Achievement key from the dashboard catalog.")
+          .setRequired(true)
+          .setMaxLength(32)
+      )
+  )
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("revoke")
+      .setDescription("Remove a custom achievement from a member.")
+      .addUserOption((option) =>
+        option
+          .setName("user")
+          .setDescription("Member to remove the achievement from.")
+          .setRequired(true)
+      )
+      .addStringOption((option) =>
+        option
+          .setName("key")
+          .setDescription("Achievement key to remove.")
+          .setRequired(true)
+          .setMaxLength(32)
+      )
+  );
+
 export const commandBuilders = [
   antispamCommand,
+  achievementCommand,
+  birthdayCommand,
   muteCommand,
   unmuteCommand,
   timeoutCommand,
@@ -476,6 +648,8 @@ export const commandBuilders = [
   lockdownCommand,
   unlockdownCommand,
   nickresetCommand,
+  guessNumberCommand,
   welcomeTestCommand
 ];
 export const commands = commandBuilders.map((command) => command.toJSON());
+export const publicCommandNames = new Set(["achievement", "birthday", "guessnumber"]);
