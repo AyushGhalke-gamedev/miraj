@@ -1578,6 +1578,8 @@ async function handleNickresetCommand(interaction) {
 }
 
 async function handleWelcomeTestCommand(interaction) {
+  await deferSafely(interaction);
+
   const config = configStore.get(interaction.guild.id);
   const overrideChannel = interaction.options.getChannel("channel");
   const user = interaction.options.getUser("user") ?? interaction.user;
@@ -1608,16 +1610,37 @@ async function handleWelcomeTestCommand(interaction) {
     return;
   }
 
-  const payload = await buildWelcomePayload(member, config, {
-    code: "test",
-    inviterId: interaction.user.id,
-    inviterTag: interaction.user.tag,
-    inviterUsername: interaction.user.username,
-    inviterMention: `<@${interaction.user.id}>`,
-    inviterInvites: 1
-  });
+  let payload;
 
-  await channel.send(payload);
+  try {
+    payload = await buildWelcomePayload(member, config, {
+      code: "test",
+      inviterId: interaction.user.id,
+      inviterTag: interaction.user.tag,
+      inviterUsername: interaction.user.username,
+      inviterMention: `<@${interaction.user.id}>`,
+      inviterInvites: 1
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Failed to build welcome preview:", error);
+    await replySafely(interaction, {
+      content: `Could not build the welcome preview: ${truncate(message, 300)}`
+    });
+    return;
+  }
+
+  try {
+    await channel.send(payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Failed to send welcome preview:", error);
+    await replySafely(interaction, {
+      content: `Could not send the welcome preview. Check that the bot can View Channel, Send Messages, and Attach Files in <#${channel.id}>. Details: ${truncate(message, 240)}`
+    });
+    return;
+  }
+
   await replySafely(interaction, {
     content: `Sent a test welcome for ${user.tag} in <#${channel.id}>.`
   });
@@ -2602,6 +2625,16 @@ function truncate(value, maxLength) {
   return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
 }
 
+async function deferSafely(interaction) {
+  if (
+    !interaction.deferred
+    && !interaction.replied
+    && typeof interaction.deferReply === "function"
+  ) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  }
+}
+
 async function replySafely(interaction, payload) {
   const response = {
     ...payload,
@@ -2609,7 +2642,10 @@ async function replySafely(interaction, payload) {
     allowedMentions: { parse: [] }
   };
 
-  if (interaction.deferred || interaction.replied) {
+  if (interaction.deferred && typeof interaction.editReply === "function") {
+    const { flags: _flags, ...editResponse } = response;
+    await interaction.editReply(editResponse);
+  } else if (interaction.replied) {
     await interaction.followUp(response);
   } else {
     await interaction.reply(response);
