@@ -57,7 +57,7 @@ export async function buildWelcomePayload(member, config, inviteInfo = null) {
     files,
     allowedMentions: {
       parse: [],
-      users: [member.id, inviteInfo?.inviterId].filter(Boolean)
+      users: [...new Set([member.id, inviteInfo?.inviterId].filter(Boolean))]
     }
   };
 }

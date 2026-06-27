@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { normalizeGuildConfig } from "../src/config.js";
 import { renderBirthdayTemplate, renderGuessTemplate } from "../src/funBanners.js";
-import { renderWelcomeTemplate } from "../src/welcome.js";
+import { buildWelcomePayload, renderWelcomeTemplate, sendWelcome } from "../src/welcome.js";
 
 test("welcome templates replace member and server placeholders", () => {
   const member = {
@@ -40,6 +40,73 @@ test("welcome templates replace inviter placeholders", () => {
     ),
     "Invited by mercy using abc; they now have 7."
   );
+});
+
+test("welcome payload deduplicates the member and inviter mention", async () => {
+  const member = {
+    id: "123",
+    displayName: "Captain",
+    user: { username: "ayush" },
+    guild: { name: "Code Club", memberCount: 42 }
+  };
+  const config = normalizeGuildConfig({
+    welcomeMessage: "Welcome {mention}!",
+    welcomeBannerEnabled: false
+  });
+  const payload = await buildWelcomePayload(member, config, {
+    code: "test",
+    inviterId: "123",
+    inviterTag: "ayush",
+    inviterUsername: "ayush",
+    inviterMention: "<@123>",
+    inviterInvites: 1
+  });
+
+  assert.deepEqual(payload.allowedMentions.users, ["123"]);
+});
+
+test("detected inviter name is included in the sent welcome message", async () => {
+  let sentPayload = null;
+  const channel = {
+    isTextBased: () => true,
+    send: async (payload) => {
+      sentPayload = payload;
+    }
+  };
+  const member = {
+    id: "123",
+    displayName: "New Member",
+    user: { username: "new-member" },
+    guild: {
+      id: "guild-1",
+      name: "Code Club",
+      memberCount: 42,
+      channels: { fetch: async () => channel }
+    }
+  };
+  const config = normalizeGuildConfig({
+    welcomeEnabled: true,
+    welcomeChannelId: "channel-1",
+    welcomeInviteTrackingEnabled: true,
+    welcomeShowInviter: true,
+    welcomeBannerEnabled: false,
+    welcomeMessage: "Welcome {mention}! Invited by {inviterName}."
+  });
+  const store = { get: () => config };
+  const inviteTracker = {
+    identifyInvite: async () => ({
+      code: "abc",
+      inviterId: "999",
+      inviterTag: "mercy",
+      inviterUsername: "mercy",
+      inviterMention: "<@999>",
+      inviterInvites: 7
+    })
+  };
+
+  assert.equal(await sendWelcome(member, store, inviteTracker), true);
+  assert.equal(sentPayload.content, "Welcome <@123>! Invited by mercy.");
+  assert.deepEqual(sentPayload.allowedMentions.users, ["123", "999"]);
 });
 
 test("welcome config normalizes colors and custom background URLs", () => {
