@@ -234,7 +234,7 @@ async function handleDeletedMessage(message) {
 
   const result = spamTracker.trackDeletedMessage(message, config);
 
-  if (!result.spam || !result.userId) {
+  if (!result.spam || !("userId" in result) || !result.userId) {
     return;
   }
 
@@ -399,7 +399,7 @@ async function buildMessageCommandOptions(message, commandName, argsText) {
     let reasonStart = 1;
     const deleteDays = readIntegerToken(tokens[1]);
 
-    if (Number.isInteger(deleteDays)) {
+    if (deleteDays !== null) {
       data.integers.set("delete_message_days", Math.min(7, Math.max(0, deleteDays)));
       reasonStart = 2;
     }
@@ -449,7 +449,7 @@ async function buildMessageCommandOptions(message, commandName, argsText) {
   if (commandName === "slowmode") {
     const seconds = readIntegerToken(tokens[0]);
 
-    if (!Number.isInteger(seconds) || seconds < 0) {
+    if (seconds === null || seconds < 0) {
       return { error: "Add a slowmode length in seconds. Use 0 to disable it." };
     }
 
@@ -1080,7 +1080,7 @@ async function applyAutomodViolation({ guild, user, member, channelId, message, 
   }
 
   const warning = await configStore.addWarning(guild.id, user.id, {
-    moderatorId: client.user.id,
+    moderatorId: client.user?.id ?? "automod",
     moderatorTag: "AutoMod",
     reason,
     source: "automod",
@@ -2270,11 +2270,11 @@ function commandRequiresAdministrator(commandName, subcommand = null) {
   }
 
   if (commandName === "guessnumber") {
-    return ["start", "stop"].includes(subcommand);
+    return subcommand !== null && ["start", "stop"].includes(subcommand);
   }
 
   if (commandName === "achievement") {
-    return ["grant", "revoke"].includes(subcommand);
+    return subcommand !== null && ["grant", "revoke"].includes(subcommand);
   }
 
   if (commandName === "birthday") {
@@ -2374,7 +2374,8 @@ async function checkBirthdays(readyClient) {
         await channel.send(await buildBirthdayPayload(member, config));
         await configStore.markBirthdayDelivered(guild.id, birthday.userId, state.dateKey);
       } catch (error) {
-        console.warn(`Could not send birthday message for ${birthday.userId}: ${error.message}`);
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`Could not send birthday message for ${birthday.userId}: ${message}`);
       }
     }
   }
@@ -2569,7 +2570,7 @@ function formatWarningNotice({
   totalWarnings,
   activeWarnings = null,
   threshold = null,
-  action = null
+  action = ""
 }) {
   const source = warning.source === "automod" ? "AutoMod" : "Admin";
   const lines = [

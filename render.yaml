@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: discord-spam-guard
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false

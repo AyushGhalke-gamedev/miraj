@@ -25,21 +25,33 @@ export function startDashboard(client, store) {
   }
 
   const password = process.env.DASHBOARD_PASSWORD;
-
-  if (!password) {
-    console.warn("Dashboard disabled. Set DASHBOARD_PASSWORD to enable the web admin dashboard.");
-    return null;
-  }
-
   const app = express();
   const port = readPort(process.env.PORT ?? process.env.DASHBOARD_PORT, 3000);
-  const host = process.env.DASHBOARD_HOST || "127.0.0.1";
+  const host = process.env.DASHBOARD_HOST
+    || (process.env.RENDER || process.env.PORT ? "0.0.0.0" : "127.0.0.1");
+
+  app.disable("x-powered-by");
+  app.get("/health", (_request, response) => {
+    response.status(200).json({ status: "ok" });
+  });
+
+  if (!password) {
+    app.get("/", (_request, response) => {
+      response.type("text/plain").send("Discord bot is alive.");
+    });
+
+    console.warn("Dashboard disabled. Only the public health endpoint is available.");
+    server = app.listen(port, host, () => {
+      console.log(`Health server running at http://${host}:${port}`);
+    });
+    return server;
+  }
+
   const secret = process.env.DASHBOARD_SECRET || crypto
     .createHash("sha256")
     .update(`${password}:${process.env.DISCORD_TOKEN ?? ""}`)
     .digest("hex");
 
-  app.disable("x-powered-by");
   app.use(express.urlencoded({ extended: false, limit: "64kb" }));
   app.use("/assets", express.static(path.join(process.cwd(), "public"), {
     etag: true,
@@ -161,7 +173,8 @@ export function startDashboard(client, store) {
       await store.update(guild.id, patch);
       response.redirect(`/guild/${guild.id}?saved=1`);
     } catch (error) {
-      response.status(400).send(`Could not update settings: ${escapeHtml(error.message)}`);
+      const message = error instanceof Error ? error.message : String(error);
+      response.status(400).send(`Could not update settings: ${escapeHtml(message)}`);
     }
   }
   );

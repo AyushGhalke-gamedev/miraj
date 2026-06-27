@@ -1,9 +1,24 @@
 import { AttachmentBuilder } from "discord.js";
 
+/**
+ * @typedef {object} InviteInfo
+ * @property {string} code
+ * @property {string | null} [inviterId]
+ * @property {string} [inviterTag]
+ * @property {string} inviterUsername
+ * @property {string} inviterMention
+ * @property {number} inviterInvites
+ */
+
 const BANNER_WIDTH = 1000;
 const BANNER_HEIGHT = 360;
 const BANNER_FILENAME = "welcome-banner.png";
 
+/**
+ * @param {any} member
+ * @param {any} store
+ * @param {import("./inviteTracker.js").InviteTracker | null} [inviteTracker]
+ */
 export async function sendWelcome(member, store, inviteTracker = null) {
   const config = store.get(member.guild.id);
 
@@ -23,6 +38,11 @@ export async function sendWelcome(member, store, inviteTracker = null) {
   return true;
 }
 
+/**
+ * @param {any} member
+ * @param {any} config
+ * @param {InviteInfo | null} [inviteInfo]
+ */
 export async function buildWelcomePayload(member, config, inviteInfo = null) {
   const content = renderWelcomeTemplate(config.welcomeMessage, member, inviteInfo);
   const files = [];
@@ -42,6 +62,11 @@ export async function buildWelcomePayload(member, config, inviteInfo = null) {
   };
 }
 
+/**
+ * @param {any} member
+ * @param {any} config
+ * @param {InviteInfo | null} [inviteInfo]
+ */
 export async function createWelcomeBanner(member, config, inviteInfo = null) {
   const { createCanvas, loadImage } = await import("@napi-rs/canvas");
   const canvas = createCanvas(BANNER_WIDTH, BANNER_HEIGHT);
@@ -54,7 +79,13 @@ export async function createWelcomeBanner(member, config, inviteInfo = null) {
   return canvas.toBuffer("image/png");
 }
 
+/**
+ * @param {string} template
+ * @param {any} member
+ * @param {InviteInfo | null} [inviteInfo]
+ */
 export function renderWelcomeTemplate(template, member, inviteInfo = null) {
+  const inviterInvites = inviteInfo?.inviterInvites;
   const replacements = {
     mention: `<@${member.id}>`,
     username: member.user?.username ?? "friend",
@@ -63,8 +94,8 @@ export function renderWelcomeTemplate(template, member, inviteInfo = null) {
     memberCount: String(member.guild?.memberCount ?? "?"),
     inviterName: inviteInfo?.inviterUsername ?? inviteInfo?.inviterTag ?? "Unknown inviter",
     inviterMention: inviteInfo?.inviterMention ?? "Unknown inviter",
-    inviterInvites: Number.isFinite(inviteInfo?.inviterInvites)
-      ? String(inviteInfo.inviterInvites)
+    inviterInvites: typeof inviterInvites === "number" && Number.isFinite(inviterInvites)
+      ? String(inviterInvites)
       : "?",
     inviteCode: inviteInfo?.code ?? "unknown"
   };

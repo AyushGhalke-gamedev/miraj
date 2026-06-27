@@ -42,11 +42,15 @@ export class ConfigStore {
           normalizeGuildWarnings(guildWarnings)
         ])
       );
-      this.guessGames = new Map(
-        Object.entries(guessGames)
-          .map(([guildId, game]) => [guildId, normalizeGuessGame(game)])
-          .filter(([, game]) => game)
-      );
+      this.guessGames = new Map();
+
+      for (const [guildId, game] of Object.entries(guessGames)) {
+        const normalizedGame = normalizeGuessGame(game);
+
+        if (normalizedGame) {
+          this.guessGames.set(guildId, normalizedGame);
+        }
+      }
       this.birthdays = new Map(
         Object.entries(birthdays).map(([guildId, guildBirthdays]) => [
           guildId,
@@ -66,7 +70,7 @@ export class ConfigStore {
         ])
       );
     } catch (error) {
-      if (error.code !== "ENOENT") {
+      if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) {
         throw error;
       }
     }
@@ -93,6 +97,11 @@ export class ConfigStore {
     return userWarnings.map((warning) => ({ ...warning }));
   }
 
+  /**
+   * @param {string} guildId
+   * @param {string} userId
+   * @param {{ source?: string | null, since?: number }} [options]
+   */
   getActiveWarnings(guildId, userId, { source = null, since = 0 } = {}) {
     return this.getWarnings(guildId, userId).filter((warning) => {
       if (source && warning.source !== source) {
@@ -507,11 +516,17 @@ function normalizeGuildBirthdays(value) {
     return new Map();
   }
 
-  return new Map(
-    Object.entries(value)
-      .map(([userId, birthday]) => [userId, normalizeBirthday({ ...birthday, userId })])
-      .filter(([, birthday]) => birthday)
-  );
+  const birthdays = new Map();
+
+  for (const [userId, birthday] of Object.entries(value)) {
+    const normalizedBirthday = normalizeBirthday({ ...birthday, userId });
+
+    if (normalizedBirthday) {
+      birthdays.set(userId, normalizedBirthday);
+    }
+  }
+
+  return birthdays;
 }
 
 function normalizeBirthday(birthday) {
