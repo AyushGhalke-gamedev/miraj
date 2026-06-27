@@ -73,7 +73,6 @@ This is not a full Carl-bot clone. Carl-bot is a large hosted platform with reac
 ```env
 DISCORD_TOKEN=your_bot_token_here
 DISCORD_CLIENT_ID=your_application_client_id_here
-DISCORD_GUILD_ID=your_test_server_id_here
 DASHBOARD_PASSWORD=choose_a_strong_password
 # Recommended on hosted deployments:
 DATABASE_URL=postgresql://user:password@host:5432/database
@@ -106,7 +105,7 @@ npm run deploy
 npm start
 ```
 
-Use `DISCORD_GUILD_ID` for fast command updates while testing. Remove it later and rerun `npm run deploy` to register commands globally.
+`npm run deploy` always registers commands globally so the bot works in every server where it is installed. For fast command updates in one development server, set `DISCORD_GUILD_ID` and use `npm run deploy:guild` instead. Rerun `npm run deploy` before release; it also removes the old test-server command copy to avoid duplicates.
 
 When `DASHBOARD_PASSWORD` is set, `npm start` also starts the dashboard at `http://127.0.0.1:3000`. Change `DASHBOARD_PORT` or `DASHBOARD_HOST` in `.env` if needed.
 
