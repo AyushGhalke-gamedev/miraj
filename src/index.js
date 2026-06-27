@@ -45,6 +45,7 @@ if (!token) {
 }
 
 await configStore.load();
+console.log(`State storage ready: ${configStore.storage.name}.`);
 
 const spamTracker = new SpamTracker();
 const inviteTracker = new InviteTracker();

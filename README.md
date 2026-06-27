@@ -19,7 +19,7 @@ A Discord bot that watches server messages for spam and can automatically timeou
 - DMs affected users about moderation actions when possible.
 - Posts detailed warning notices with the warned user, reason, source, and moderator.
 - Optional deletion of recent spam messages.
-- Per-server configuration saved in `data/guilds.json`.
+- Per-server state saved in PostgreSQL when `DATABASE_URL` is set, with `data/guilds.json` as the local fallback.
 - Supports dashboard-configured message commands such as `!warn @user reason` in addition to slash commands.
 - Administrator-only slash commands:
   - `/antispam status`
@@ -75,6 +75,8 @@ DISCORD_TOKEN=your_bot_token_here
 DISCORD_CLIENT_ID=your_application_client_id_here
 DISCORD_GUILD_ID=your_test_server_id_here
 DASHBOARD_PASSWORD=choose_a_strong_password
+# Recommended on hosted deployments:
+DATABASE_URL=postgresql://user:password@host:5432/database
 ```
 
 4. Invite the bot with the `bot` and `applications.commands` scopes. Recommended bot permissions:
@@ -107,6 +109,12 @@ npm start
 Use `DISCORD_GUILD_ID` for fast command updates while testing. Remove it later and rerun `npm run deploy` to register commands globally.
 
 When `DASHBOARD_PASSWORD` is set, `npm start` also starts the dashboard at `http://127.0.0.1:3000`. Change `DASHBOARD_PORT` or `DASHBOARD_HOST` in `.env` if needed.
+
+### Persistent storage on Render
+
+Set `DATABASE_URL` to a PostgreSQL connection URL in the Render service's Environment settings. On startup, the bot automatically creates its `discord_bot_state` table. If the table is empty, it imports the existing `data/guilds.json` once. Dashboard settings, warnings, games, birthdays, delivery history, and achievements are then saved in PostgreSQL and survive service restarts and deploys.
+
+Without `DATABASE_URL`, the bot continues to use `SPAM_BOT_DATA_FILE` or `data/guilds.json`. Render's filesystem is ephemeral, so that fallback is intended for local development rather than hosted persistence.
 
 This project is pinned to Node 22. If you see `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 94`, switch away from Node 26, reinstall dependencies, and run again.
 

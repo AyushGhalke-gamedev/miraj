@@ -1,12 +1,11 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import { normalizeGuildConfig } from "./config.js";
-
-const DEFAULT_DATA_FILE = path.join(process.cwd(), "data", "guilds.json");
+import { createStateStorage } from "./persistence.js";
 
 export class ConfigStore {
-  constructor(filePath = process.env.SPAM_BOT_DATA_FILE || DEFAULT_DATA_FILE) {
-    this.filePath = filePath;
+  constructor(options = {}) {
+    this.storage = createStateStorage(options);
+    this.filePath = this.storage.filePath ?? null;
+    this.saveQueue = Promise.resolve();
     this.guilds = new Map();
     this.warnings = new Map();
     this.guessGames = new Map();
@@ -16,64 +15,57 @@ export class ConfigStore {
   }
 
   async load() {
-    try {
-      const raw = await fs.readFile(this.filePath, "utf8");
-      const data = JSON.parse(raw);
-      const guilds = data.guilds && typeof data.guilds === "object" ? data.guilds : {};
-      const warnings = data.warnings && typeof data.warnings === "object" ? data.warnings : {};
-      const guessGames = data.guessGames && typeof data.guessGames === "object" ? data.guessGames : {};
-      const birthdays = data.birthdays && typeof data.birthdays === "object" ? data.birthdays : {};
-      const birthdayDeliveries = data.birthdayDeliveries && typeof data.birthdayDeliveries === "object"
-        ? data.birthdayDeliveries
-        : {};
-      const achievements = data.achievements && typeof data.achievements === "object"
-        ? data.achievements
-        : {};
+    const data = await this.storage.load();
+    const guilds = data.guilds && typeof data.guilds === "object" ? data.guilds : {};
+    const warnings = data.warnings && typeof data.warnings === "object" ? data.warnings : {};
+    const guessGames = data.guessGames && typeof data.guessGames === "object" ? data.guessGames : {};
+    const birthdays = data.birthdays && typeof data.birthdays === "object" ? data.birthdays : {};
+    const birthdayDeliveries = data.birthdayDeliveries && typeof data.birthdayDeliveries === "object"
+      ? data.birthdayDeliveries
+      : {};
+    const achievements = data.achievements && typeof data.achievements === "object"
+      ? data.achievements
+      : {};
 
-      this.guilds = new Map(
-        Object.entries(guilds).map(([guildId, config]) => [
-          guildId,
-          normalizeGuildConfig(config)
-        ])
-      );
-      this.warnings = new Map(
-        Object.entries(warnings).map(([guildId, guildWarnings]) => [
-          guildId,
-          normalizeGuildWarnings(guildWarnings)
-        ])
-      );
-      this.guessGames = new Map();
+    this.guilds = new Map(
+      Object.entries(guilds).map(([guildId, config]) => [
+        guildId,
+        normalizeGuildConfig(config)
+      ])
+    );
+    this.warnings = new Map(
+      Object.entries(warnings).map(([guildId, guildWarnings]) => [
+        guildId,
+        normalizeGuildWarnings(guildWarnings)
+      ])
+    );
+    this.guessGames = new Map();
 
-      for (const [guildId, game] of Object.entries(guessGames)) {
-        const normalizedGame = normalizeGuessGame(game);
+    for (const [guildId, game] of Object.entries(guessGames)) {
+      const normalizedGame = normalizeGuessGame(game);
 
-        if (normalizedGame) {
-          this.guessGames.set(guildId, normalizedGame);
-        }
-      }
-      this.birthdays = new Map(
-        Object.entries(birthdays).map(([guildId, guildBirthdays]) => [
-          guildId,
-          normalizeGuildBirthdays(guildBirthdays)
-        ])
-      );
-      this.birthdayDeliveries = new Map(
-        Object.entries(birthdayDeliveries).map(([guildId, deliveries]) => [
-          guildId,
-          normalizeGuildBirthdayDeliveries(deliveries)
-        ])
-      );
-      this.achievements = new Map(
-        Object.entries(achievements).map(([guildId, guildAchievements]) => [
-          guildId,
-          normalizeGuildAchievements(guildAchievements)
-        ])
-      );
-    } catch (error) {
-      if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) {
-        throw error;
+      if (normalizedGame) {
+        this.guessGames.set(guildId, normalizedGame);
       }
     }
+    this.birthdays = new Map(
+      Object.entries(birthdays).map(([guildId, guildBirthdays]) => [
+        guildId,
+        normalizeGuildBirthdays(guildBirthdays)
+      ])
+    );
+    this.birthdayDeliveries = new Map(
+      Object.entries(birthdayDeliveries).map(([guildId, deliveries]) => [
+        guildId,
+        normalizeGuildBirthdayDeliveries(deliveries)
+      ])
+    );
+    this.achievements = new Map(
+      Object.entries(achievements).map(([guildId, guildAchievements]) => [
+        guildId,
+        normalizeGuildAchievements(guildAchievements)
+      ])
+    );
   }
 
   get(guildId) {
@@ -330,8 +322,12 @@ export class ConfigStore {
   }
 
   async save() {
-    await fs.mkdir(path.dirname(this.filePath), { recursive: true });
+    const operation = this.saveQueue.then(() => this.storage.save(this.serialize()));
+    this.saveQueue = operation.catch(() => {});
+    return operation;
+  }
 
+  serialize() {
     const guilds = Object.fromEntries(this.guilds);
     const warnings = Object.fromEntries(
       [...this.warnings.entries()].map(([guildId, guildWarnings]) => [
@@ -359,11 +355,15 @@ export class ConfigStore {
       ])
     );
 
-    await fs.writeFile(
-      this.filePath,
-      `${JSON.stringify({ guilds, warnings, guessGames, birthdays, birthdayDeliveries, achievements }, null, 2)}\n`,
-      "utf8"
-    );
+    return { guilds, warnings, guessGames, birthdays, birthdayDeliveries, achievements };
+  }
+
+  async close() {
+    await this.saveQueue;
+
+    if (typeof this.storage.close === "function") {
+      await this.storage.close();
+    }
   }
 
   getGuildWarnings(guildId) {
